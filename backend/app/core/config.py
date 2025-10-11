@@ -16,6 +16,20 @@ class Settings(BaseSettings):
     vector_dimension: int = Field(default=1536, env="VECTOR_DIMENSION")  # type: ignore[call-overload]
     auto_create_pgvector_extension: bool = Field(default=True, env="AUTO_CREATE_PGVECTOR_EXTENSION")  # type: ignore[call-overload]
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")  # type: ignore[call-overload]
+    
+    # Google OAuth
+    google_client_id: str = Field(default="", env="GOOGLE_CLIENT_ID")  # type: ignore[call-overload]
+    google_client_secret: str = Field(default="", env="GOOGLE_CLIENT_SECRET")  # type: ignore[call-overload]
+    google_redirect_uri: str = Field(default="http://localhost:8000/auth/google/callback", env="GOOGLE_REDIRECT_URI")  # type: ignore[call-overload]
+    
+    # HubSpot OAuth
+    hubspot_client_id: str = Field(default="", env="HUBSPOT_CLIENT_ID")  # type: ignore[call-overload]
+    hubspot_client_secret: str = Field(default="", env="HUBSPOT_CLIENT_SECRET")  # type: ignore[call-overload]
+    hubspot_redirect_uri: str = Field(default="http://localhost:8000/auth/hubspot/callback", env="HUBSPOT_REDIRECT_URI")  # type: ignore[call-overload]
+    
+    # Application
+    secret_key: str = Field(default="dev-secret-key-change-in-production-min-32-characters", env="SECRET_KEY")  # type: ignore[call-overload]
+    frontend_url: str = Field(default="http://localhost:3000", env="FRONTEND_URL")  # type: ignore[call-overload]
 
     class Config:
         env_file = ".env"

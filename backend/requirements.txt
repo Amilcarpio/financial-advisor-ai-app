@@ -15,3 +15,5 @@ openai
 aiohttp
 python-multipart
 pydantic[dotenv]
+pydantic-settings
+pyjwt
