@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     database_url: str = Field(default=..., env="DATABASE_URL")  # type: ignore[call-overload]
     vector_dimension: int = Field(default=1536, env="VECTOR_DIMENSION")  # type: ignore[call-overload]
     auto_create_pgvector_extension: bool = Field(default=True, env="AUTO_CREATE_PGVECTOR_EXTENSION")  # type: ignore[call-overload]
+    
+    # OpenAI
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")  # type: ignore[call-overload]
+    openai_chat_model: str = Field(default="gpt-4o-mini", env="OPENAI_CHAT_MODEL")  # type: ignore[call-overload]
     
     # Google OAuth
     google_client_id: str = Field(default="", env="GOOGLE_CLIENT_ID")  # type: ignore[call-overload]
@@ -30,6 +33,11 @@ class Settings(BaseSettings):
     # Application
     secret_key: str = Field(default="dev-secret-key-change-in-production-min-32-characters", env="SECRET_KEY")  # type: ignore[call-overload]
     frontend_url: str = Field(default="http://localhost:3000", env="FRONTEND_URL")  # type: ignore[call-overload]
+
+    #workers
+    worker_poll_interval: int = Field(default=5, env="WORKER_POLL_INTERVAL")  # type: ignore[call-overload]
+    worker_max_concurrent: int = Field(default=10, env="WORKER_MAX_CONCURRENT")  # type: ignore[call-overload]
+    worker_lock_timeout: int = Field(default=300, env="WORKER_LOCK_TIMEOUT")  # type: ignore[call-overload]
 
     class Config:
         env_file = ".env"
