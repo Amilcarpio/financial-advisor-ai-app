@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from sqlalchemy import JSON, Column, Index
@@ -9,6 +10,15 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:  # pragma: no cover
     from .user import User
+
+
+class TaskState(str, Enum):
+    """Task state machine states."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    WAITING_FOR_REPLY = "waiting_for_reply"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class Task(SQLModel, table=True):
