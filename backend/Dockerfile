@@ -27,24 +27,26 @@ FROM python:3.13-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH=/root/.local/bin:$PATH
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser
+
+# Copy Python dependencies from builder to appuser's home
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
 # Copy application code
-COPY app ./app
-COPY alembic.ini ./
-COPY .env.example ./.env.example
+COPY --chown=appuser:appuser app ./app
+COPY --chown=appuser:appuser alembic.ini ./
+COPY --chown=appuser:appuser .env.example ./.env.example
 
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
-
+# Switch to non-root user
 USER appuser
+
+# Add user's local bin to PATH
+ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Expose port
 EXPOSE 8000

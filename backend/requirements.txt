@@ -3,6 +3,7 @@ uvicorn[standard]
 sqlmodel
 alembic
 psycopg[binary]
+psycopg2-binary
 pgvector
 python-dotenv
 httpx
@@ -17,3 +18,14 @@ python-multipart
 pydantic[dotenv]
 pydantic-settings
 pyjwt
+beautifulsoup4
+lxml
+html5lib
+tiktoken
+slowapi
+redis
+bleach
+python-jose[cryptography]
+passlib[bcrypt]
+prometheus-client
+sentry-sdk[fastapi]
