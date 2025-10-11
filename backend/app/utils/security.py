@@ -5,10 +5,17 @@ from hashlib import sha256
 from typing import Any, Dict, Optional
 
 import jwt
-from fastapi import HTTPException, status
-
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlmodel import Session, select
 
 from ..core.config import settings
+from ..core.database import get_session
+from ..core.security import PII_PATTERNS  # Re-export for convenience
+from ..models.user import User
+
+
+security = HTTPBearer()
 
 
 def hash_secret(raw: str) -> str:
@@ -165,3 +172,32 @@ class StateManager:
         for key in expired_keys:
             cls._states.pop(key, None)
 
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_session)
+) -> User:
+    """Get current authenticated user from JWT token.
+    
+    Args:
+        credentials: HTTP authorization credentials with JWT token
+        db: Database session
+        
+    Returns:
+        Current user
+        
+    Raises:
+        HTTPException: If token is invalid or user not found
+    """
+    token = credentials.credentials
+    user_id = verify_session_token(token)
+    
+    user = db.exec(select(User).where(User.id == user_id)).first()
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    
+    return user
