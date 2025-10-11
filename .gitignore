@@ -57,3 +57,11 @@ htmlcov/
 
 # Alembic
 backend/tmp.db
+
+# Project documentation and planning (not for commit)
+BACKEND_PLAN.MD
+FRONTEND_PLAN.MD
+PROJECT_INSTRUCTIONS.MD
+*.png
+*.jpg
+*.jpeg
