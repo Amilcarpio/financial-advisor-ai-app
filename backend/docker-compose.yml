@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL database with pgvector extension
   db:
@@ -25,7 +23,7 @@ services:
   # Backend FastAPI application
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: financial-advisor-backend
     restart: unless-stopped
@@ -33,7 +31,7 @@ services:
       - "8000:8000"
     environment:
       # Database
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/financial_advisor
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/financial_advisor
       DEBUG_SQL: "false"
       AUTO_CREATE_PGVECTOR_EXTENSION: "true"
       
@@ -58,7 +56,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./backend/app:/app/app
+      - ./app:/app/app
     networks:
       - app-network
 
