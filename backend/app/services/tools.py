@@ -15,6 +15,7 @@ from typing import Any, Optional
 import json
 import base64
 import logging
+import re
 from email.mime.text import MIMEText
 
 from google.oauth2.credentials import Credentials
@@ -597,59 +598,93 @@ async def find_contact(
         if not access_token:
             raise ToolExecutionError("HubSpot access token not found")
         
+        # Detect if query looks like "First Last" (full name)
+        filter_groups = []
+        query_parts = query.strip().split()
+        
+        # If query has exactly 2 words, try firstname AND lastname match
+        if len(query_parts) == 2:
+            filter_groups.append({
+                "filters": [
+                    {
+                        "propertyName": "firstname",
+                        "operator": "CONTAINS_TOKEN",
+                        "value": query_parts[0],
+                    },
+                    {
+                        "propertyName": "lastname",
+                        "operator": "CONTAINS_TOKEN",
+                        "value": query_parts[1],
+                    },
+                ]
+            })
+        
+        # Also add OR filters (original logic) - this becomes an OR with the AND above
+        filter_groups.append({
+            "filters": [
+                {
+                    "propertyName": "email",
+                    "operator": "CONTAINS_TOKEN",
+                    "value": query,
+                },
+                {
+                    "propertyName": "firstname",
+                    "operator": "CONTAINS_TOKEN",
+                    "value": query,
+                },
+                {
+                    "propertyName": "lastname",
+                    "operator": "CONTAINS_TOKEN",
+                    "value": query,
+                },
+                {
+                    "propertyName": "company",
+                    "operator": "CONTAINS_TOKEN",
+                    "value": query,
+                },
+            ]
+        })
+        
+        logger.info(f"[find_contact] Searching HubSpot for: '{query}' (detected {len(query_parts)} parts)")
+        
         # Search contacts via HubSpot API
         async with httpx.AsyncClient() as client:
+            search_payload = {
+                "filterGroups": filter_groups,
+                "properties": ["firstname", "lastname", "email", "phone", "company"],
+                "limit": limit,
+            }
+            
+            logger.debug(f"[find_contact] HubSpot search payload: {json.dumps(search_payload, indent=2)}")
+            
             response = await client.post(
                 "https://api.hubapi.com/crm/v3/objects/contacts/search",
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "filterGroups": [{
-                        "filters": [
-                            {
-                                "propertyName": "email",
-                                "operator": "CONTAINS_TOKEN",
-                                "value": query,
-                            },
-                            {
-                                "propertyName": "firstname",
-                                "operator": "CONTAINS_TOKEN",
-                                "value": query,
-                            },
-                            {
-                                "propertyName": "lastname",
-                                "operator": "CONTAINS_TOKEN",
-                                "value": query,
-                            },
-                            {
-                                "propertyName": "company",
-                                "operator": "CONTAINS_TOKEN",
-                                "value": query,
-                            },
-                        ]
-                    }],
-                    "properties": ["firstname", "lastname", "email", "phone", "company"],
-                    "limit": limit,
-                },
+                json=search_payload,
                 timeout=30.0,
             )
             
             response.raise_for_status()
             data = response.json()
             
+            logger.info(f"[find_contact] HubSpot returned {len(data.get('results', []))} results")
+            
             contacts = []
             for result in data.get("results", []):
                 props = result.get("properties", {})
-                contacts.append({
+                contact = {
                     "id": result.get("id"),
                     "first_name": props.get("firstname"),
                     "last_name": props.get("lastname"),
                     "email": props.get("email"),
                     "phone": props.get("phone"),
                     "company": props.get("company"),
-                })
+                }
+                contacts.append(contact)
+                logger.debug(f"[find_contact] Found: {contact}")
             
             return {
                 "status": "success",
@@ -758,16 +793,57 @@ async def create_contact(
             
             # Handle duplicate contact (409)
             if response.status_code == 409:
-                # Contact already exists, try to find it
+                logger.info(f"[create_contact] Contact exists (409): {response.text}")
+                
+                # Try to extract ID from error message (HubSpot sometimes returns it)
+                error_data = response.json() if response.text else {}
+                error_message = error_data.get("message", "")
+                
+                # Try regex to extract ID from error message like "Contact already exists. Existing ID: 163202512937"
+                id_match = re.search(r"ID:\s*(\d+)", error_message)
+                if id_match:
+                    existing_id = id_match.group(1)
+                    logger.info(f"[create_contact] Extracted existing contact ID from error: {existing_id}")
+                    
+                    # Get full contact details using direct GET by ID
+                    get_response = await client.get(
+                        f"https://api.hubapi.com/crm/v3/objects/contacts/{existing_id}",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        params={"properties": "firstname,lastname,email,phone,company"},
+                        timeout=30.0,
+                    )
+                    
+                    if get_response.status_code == 200:
+                        contact_data = get_response.json()
+                        props = contact_data.get("properties", {})
+                        return {
+                            "status": "exists",
+                            "contact_id": existing_id,
+                            "message": "Contact with this email already exists",
+                            "contact": {
+                                "id": existing_id,
+                                "first_name": props.get("firstname"),
+                                "last_name": props.get("lastname"),
+                                "email": props.get("email"),
+                                "phone": props.get("phone"),
+                                "company": props.get("company"),
+                            },
+                        }
+                
+                # Fallback: try to search by email
                 search_result = await find_contact(user, email, limit=1)
                 if search_result.get("contacts"):
                     existing = search_result["contacts"][0]
+                    logger.info(f"[create_contact] Found existing contact via search: {existing}")
                     return {
                         "status": "exists",
                         "contact_id": existing["id"],
                         "message": "Contact with this email already exists",
                         "contact": existing,
                     }
+                
+                # If we still can't find it, raise the original error
+                raise ToolExecutionError(f"Contact already exists but could not retrieve details: {error_message}")
             
             response.raise_for_status()
             data = response.json()
@@ -1108,6 +1184,274 @@ async def create_memory_rule(
         raise ToolExecutionError(f"Failed to create memory rule: {str(e)}")
 
 
+async def list_memory_rules(
+    user: User,
+    db: Session,
+) -> dict[str, Any]:
+    """
+    List all active memory rules for the user.
+    
+    Args:
+        user: User whose rules to list
+        db: Database session
+        
+    Returns:
+        Dict with list of memory rules
+    """
+    from app.models.memory_rule import MemoryRule
+    
+    try:
+        rules = db.query(MemoryRule).filter(
+            MemoryRule.user_id == user.id,
+            MemoryRule.is_active == True,
+        ).order_by(MemoryRule.created_at.desc()).all()
+        
+        rules_list = []
+        for rule in rules:
+            rules_list.append({
+                "rule_id": rule.id,
+                "rule_text": rule.rule_text,
+                "created_at": rule.created_at.isoformat() if rule.created_at else None,
+            })
+        
+        return {
+            "status": "success",
+            "total": len(rules_list),
+            "rules": rules_list,
+        }
+        
+    except Exception as e:
+        raise ToolExecutionError(f"Failed to list memory rules: {str(e)}")
+
+
+async def search_emails(
+    user: User,
+    db: Session,
+    query: str,
+    date_filter: Optional[str] = None,
+    sender_filter: Optional[str] = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """
+    Search through synced Gmail emails.
+    
+    Args:
+        user: User performing the search
+        db: Database session
+        query: Search query (semantic or keyword)
+        date_filter: Optional date filter ('today', 'yesterday', 'this_week', 'last_7_days', 'last_30_days', or YYYY-MM-DD)
+        sender_filter: Optional sender email filter
+        limit: Maximum results (1-50)
+        
+    Returns:
+        Dict with matching emails
+    """
+    from app.models.email import Email
+    from datetime import date, timedelta
+    from sqlalchemy import and_, or_, func
+    
+    try:
+        # Validate limit
+        if limit < 1 or limit > 50:
+            limit = 10
+        
+        # Build query
+        conditions = [Email.user_id == user.id]
+        
+        # Date filtering
+        if date_filter:
+            today = date.today()
+            
+            if date_filter == "today":
+                conditions.append(func.date(Email.received_at) == today)
+            elif date_filter == "yesterday":
+                conditions.append(func.date(Email.received_at) == today - timedelta(days=1))
+            elif date_filter == "this_week":
+                week_start = today - timedelta(days=today.weekday())
+                conditions.append(Email.received_at >= week_start)
+            elif date_filter == "last_7_days":
+                conditions.append(Email.received_at >= today - timedelta(days=7))
+            elif date_filter == "last_30_days":
+                conditions.append(Email.received_at >= today - timedelta(days=30))
+            else:
+                # Try parsing as specific date (YYYY-MM-DD)
+                try:
+                    from datetime import datetime
+                    specific_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
+                    conditions.append(func.date(Email.received_at) == specific_date)
+                except ValueError:
+                    logger.warning(f"Invalid date_filter format: {date_filter}")
+        
+        # Sender filtering
+        if sender_filter:
+            conditions.append(Email.sender.ilike(f"%{sender_filter}%"))
+        
+        # Text search (search in subject and body)
+        if query:
+            search_pattern = f"%{query}%"
+            conditions.append(
+                or_(
+                    Email.subject.ilike(search_pattern),
+                    Email.body_plain.ilike(search_pattern),
+                )
+            )
+        
+        # Execute query
+        emails = db.query(Email).filter(and_(*conditions)).order_by(
+            Email.received_at.desc()
+        ).limit(limit).all()
+        
+        # Format results
+        results = []
+        for email in emails:
+            # Get snippet from body
+            snippet = ""
+            if email.body_plain:
+                snippet = email.body_plain[:200] + ("..." if len(email.body_plain) > 200 else "")
+            
+            results.append({
+                "email_id": email.gmail_id,
+                "subject": email.subject,
+                "sender": email.sender,
+                "received_at": email.received_at.isoformat() if email.received_at else None,
+                "snippet": snippet,
+                "labels": email.labels,
+            })
+        
+        return {
+            "status": "success",
+            "total": len(results),
+            "query": query,
+            "date_filter": date_filter,
+            "sender_filter": sender_filter,
+            "emails": results,
+        }
+        
+    except Exception as e:
+        raise ToolExecutionError(f"Failed to search emails: {str(e)}")
+
+
+async def search_calendar(
+    user: User,
+    db: Session,
+    query: str,
+    date_filter: Optional[str] = None,
+    attendee_filter: Optional[str] = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """
+    Search through calendar events using vector store.
+    
+    Args:
+        user: User performing the search
+        db: Database session
+        query: Search query for event title/description
+        date_filter: Optional date filter ('today', 'tomorrow', 'this_week', 'next_week', 'this_month', or YYYY-MM-DD)
+        attendee_filter: Optional attendee email filter
+        limit: Maximum results (1-50)
+        
+    Returns:
+        Dict with matching calendar events
+    """
+    from app.models.vector_item import VectorItem
+    from datetime import date, timedelta, datetime
+    from sqlalchemy import and_, or_, func
+    
+    try:
+        # Validate limit
+        if limit < 1 or limit > 50:
+            limit = 10
+        
+        # Build query on vector_item
+        conditions = [
+            VectorItem.user_id == user.id,
+            VectorItem.source_type == "calendar",
+        ]
+        
+        # Text search
+        if query:
+            search_pattern = f"%{query}%"
+            conditions.append(VectorItem.text.ilike(search_pattern))
+        
+        # Execute query
+        vector_items = db.query(VectorItem).filter(and_(*conditions)).order_by(
+            VectorItem.created_at.desc()
+        ).limit(limit * 2).all()  # Get extra to filter by date/attendee
+        
+        # Parse and filter results
+        results = []
+        today = date.today()
+        
+        for item in vector_items:
+            # Parse metadata
+            metadata = item.metadata_json or {}
+            
+            # Date filtering on metadata if available
+            event_start = metadata.get("start_time")
+            if date_filter and event_start:
+                try:
+                    event_date = datetime.fromisoformat(event_start.replace("Z", "+00:00")).date()
+                    
+                    if date_filter == "today" and event_date != today:
+                        continue
+                    elif date_filter == "tomorrow" and event_date != today + timedelta(days=1):
+                        continue
+                    elif date_filter == "this_week":
+                        week_start = today - timedelta(days=today.weekday())
+                        week_end = week_start + timedelta(days=6)
+                        if not (week_start <= event_date <= week_end):
+                            continue
+                    elif date_filter == "next_week":
+                        next_week_start = today + timedelta(days=(7 - today.weekday()))
+                        next_week_end = next_week_start + timedelta(days=6)
+                        if not (next_week_start <= event_date <= next_week_end):
+                            continue
+                    elif date_filter == "this_month":
+                        if event_date.month != today.month or event_date.year != today.year:
+                            continue
+                    else:
+                        # Try specific date
+                        try:
+                            specific_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
+                            if event_date != specific_date:
+                                continue
+                        except ValueError:
+                            pass
+                except Exception as e:
+                    logger.warning(f"Error parsing event date: {e}")
+            
+            # Attendee filtering
+            if attendee_filter:
+                attendees = metadata.get("attendees", [])
+                if not any(attendee_filter.lower() in att.lower() for att in attendees):
+                    continue
+            
+            results.append({
+                "event_id": item.source_id,
+                "summary": metadata.get("summary", "Untitled Event"),
+                "start_time": metadata.get("start_time"),
+                "end_time": metadata.get("end_time"),
+                "location": metadata.get("location"),
+                "attendees": metadata.get("attendees", []),
+                "description": metadata.get("description", ""),
+            })
+            
+            if len(results) >= limit:
+                break
+        
+        return {
+            "status": "success",
+            "total": len(results),
+            "query": query,
+            "date_filter": date_filter,
+            "attendee_filter": attendee_filter,
+            "events": results,
+        }
+        
+    except Exception as e:
+        raise ToolExecutionError(f"Failed to search calendar: {str(e)}")
+
+
 # Tool execution dispatcher
 async def execute_tool(
     tool_name: str,
@@ -1228,6 +1572,32 @@ async def execute_tool(
             user=user,
             db=db,
             rule_description=arguments.get("rule_description", ""),
+        )
+    
+    elif tool_name == "list_memory_rules":
+        return await list_memory_rules(
+            user=user,
+            db=db,
+        )
+    
+    elif tool_name == "search_emails":
+        return await search_emails(
+            user=user,
+            db=db,
+            query=arguments.get("query", ""),
+            date_filter=arguments.get("date_filter"),
+            sender_filter=arguments.get("sender_filter"),
+            limit=arguments.get("limit", 10),
+        )
+    
+    elif tool_name == "search_calendar":
+        return await search_calendar(
+            user=user,
+            db=db,
+            query=arguments.get("query", ""),
+            date_filter=arguments.get("date_filter"),
+            attendee_filter=arguments.get("attendee_filter"),
+            limit=arguments.get("limit", 10),
         )
     
     else:

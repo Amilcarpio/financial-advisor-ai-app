@@ -19,8 +19,8 @@ def get_base_system_prompt() -> str:
     return f"""Financial advisor AI | Date: {date_str}
 
 DATA AVAILABLE:
-- Emails: Last 100 emails synced (search via context)
-- Calendar: Events from last 60 days + next 90 days (if available in context, use them!)
+- Emails: Last 100 emails synced - USE search_emails tool when user asks about emails from specific dates or senders
+- Calendar: Events from last 60 days + next 90 days - USE search_calendar tool for calendar queries
 - Contacts: Search via find_contact tool
 
 ACTIONS AVAILABLE:
@@ -30,6 +30,8 @@ ACTIONS AVAILABLE:
 - cancel_event: Cancel/delete events (requires Event ID from context)
 - find_contact: Search HubSpot contacts
 - create_contact: Add new contacts to HubSpot
+- search_emails: Search emails by date, sender, or content (USE THIS for "emails from today", "emails from X", etc.)
+- search_calendar: Search calendar events by date or attendees
 
 RESPONSE FORMAT:
 When listing calendar events, use this clean format with line breaks:
@@ -66,7 +68,8 @@ When confirming actions with MULTIPLE items:
 CRITICAL: Add DOUBLE line breaks (\\n\\n) between each item (events, emails, contacts) for readability.
 
 IMPORTANT: 
-- Check the retrieved context first. If calendar events are present, use them to answer.
+- **EMAILS**: When user asks about emails from specific dates (today, yesterday, this week), ALWAYS call search_emails tool with appropriate date_filter. Do NOT rely only on retrieved context.
+- **CALENDAR**: Check the retrieved context first. If calendar events are present, use them to answer.
 - ALSO CHECK the conversation history - if you just created/cancelled an event in the previous message, it exists even if not in the retrieved context yet.
 - Calendar events in context include an Event ID field - use this ID for update_event or cancel_event.
 - If no events found in BOTH context AND conversation history, say "No upcoming events found".
@@ -384,6 +387,67 @@ FUNCTION_SCHEMAS = [
             "required": ["rule_description"],
         },
     },
+    {
+        "name": "search_emails",
+        "description": "Search through all synced Gmail emails. ALWAYS use this tool when user asks about emails from specific dates (today, yesterday, this week, etc.), from specific senders, or about email content. This searches the full database, not just the retrieved context. Examples: 'emails from today', 'emails from john@example.com', 'emails about baseball'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query - can be semantic (e.g., 'emails about baseball') or specific (e.g., 'emails from john@example.com')",
+                },
+                "date_filter": {
+                    "type": "string",
+                    "description": "Optional date filter: 'today', 'yesterday', 'this_week', 'last_7_days', 'last_30_days', or specific date like '2025-10-12'",
+                },
+                "sender_filter": {
+                    "type": "string",
+                    "description": "Optional: filter by sender email address",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of emails to return (default: 10, max: 50)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "search_calendar",
+        "description": "Search through calendar events. Use this when user asks about meetings, events, or their schedule. Can filter by date range, attendees, or search terms.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query for event title, description, or attendees",
+                },
+                "date_filter": {
+                    "type": "string",
+                    "description": "Optional date filter: 'today', 'tomorrow', 'this_week', 'next_week', 'this_month', or specific date like '2025-10-15'",
+                },
+                "attendee_filter": {
+                    "type": "string",
+                    "description": "Optional: filter by attendee email address",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of events to return (default: 10, max: 50)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "list_memory_rules",
+        "description": "List all active memory rules that have been created. Use this when user asks 'what memory rules do I have' or 'show my ongoing instructions'.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
 
 
@@ -494,6 +558,12 @@ def validate_function_call(function_name: str, arguments: dict[str, Any]) -> tup
         return _validate_create_note(arguments)
     elif function_name == "create_memory_rule":
         return _validate_create_memory_rule(arguments)
+    elif function_name == "list_memory_rules":
+        return True, ""  # No arguments to validate
+    elif function_name == "search_emails":
+        return _validate_search_emails(arguments)
+    elif function_name == "search_calendar":
+        return _validate_search_calendar(arguments)
     else:
         return False, f"Unknown function: {function_name}"
 
@@ -690,6 +760,63 @@ def _validate_create_memory_rule(args: dict[str, Any]) -> tuple[bool, str]:
     if "rule_description" not in args or not args["rule_description"]:
         return False, "Missing required field: 'rule_description'"
     
+    return True, ""
+
+
+def _validate_search_emails(args: dict[str, Any]) -> tuple[bool, str]:
+    """Validate search_emails arguments."""
+    # At least one search criterion is required
+    if not any([args.get("query"), args.get("date_filter"), args.get("sender_filter")]):
+        return False, "Must provide at least one search criterion: query, date_filter, or sender_filter"
+    
+    # Validate date_filter if provided
+    if "date_filter" in args and args["date_filter"]:
+        valid_filters = ["today", "yesterday", "this_week", "last_7_days", "last_30_days"]
+        if args["date_filter"] not in valid_filters:
+            # Check if it's a date in YYYY-MM-DD format
+            import re
+            date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+            if not date_pattern.match(args["date_filter"]):
+                return False, f"Invalid date_filter. Must be one of {valid_filters} or YYYY-MM-DD format"
+    
+    # Validate limit if provided
+    if "limit" in args and args["limit"]:
+        try:
+            limit = int(args["limit"])
+            if limit < 1 or limit > 50:
+                return False, "Limit must be between 1 and 50"
+        except (ValueError, TypeError):
+            return False, "Limit must be an integer"
+    
+    return True, ""
+
+
+def _validate_search_calendar(args: dict[str, Any]) -> tuple[bool, str]:
+    """Validate search_calendar arguments."""
+    # query is required
+    if "query" not in args or not args["query"]:
+        return False, "Missing required field: 'query'"
+    
+    # Validate date_filter if provided
+    if "date_filter" in args and args["date_filter"]:
+        valid_filters = ["today", "tomorrow", "this_week", "next_week", "this_month"]
+        if args["date_filter"] not in valid_filters:
+            # Check if it's a date in YYYY-MM-DD format
+            import re
+            date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+            if not date_pattern.match(args["date_filter"]):
+                return False, f"Invalid date_filter. Must be one of {valid_filters} or YYYY-MM-DD format"
+    
+    # Validate limit if provided
+    if "limit" in args and args["limit"]:
+        try:
+            limit = int(args["limit"])
+            if limit < 1 or limit > 50:
+                return False, "Limit must be between 1 and 50"
+        except (ValueError, TypeError):
+            return False, "Limit must be an integer"
+    
+    return True, ""
     # Validate minimum length
     if len(args["rule_description"].strip()) < 10:
         return False, "Rule description must be at least 10 characters"
