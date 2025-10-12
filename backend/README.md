@@ -1,53 +1,467 @@
-# FastAPI Backend Skeleton
+# Financial Advisor AI - Backend
 
-## Getting Started
+FastAPI-based backend with AI chat capabilities, CRM integrations, and vector search.
 
-1. Create a virtual environment with Python 3.11 or higher and activate it.
-2. Install dependencies:
+## Quick Start
+
+### Using Docker (Recommended)
+
+```bash
+# Copy environment file
+cp .env.example .env
+
+# Edit .env with your API keys and credentials
+
+# Start all services (PostgreSQL + Backend)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f backend
+
+# Stop services
+docker-compose down
+```
+
+Backend will be available at `http://localhost:8000`
+API documentation at `http://localhost:8000/docs`
+
+### Local Development (Without Docker)
+
+1. **Install Python 3.13+** and create a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+2. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
-3. Copy `.env.example` to `.env` and update the values for your environment.
-4. Start the development server:
+
+3. **Setup PostgreSQL with pgvector:**
    ```bash
-   uvicorn app.main:app --reload
+   # Install PostgreSQL and pgvector extension
+   # On macOS with Homebrew:
+   brew install postgresql pgvector
+   
+   # Create database
+   createdb financial_advisor
    ```
 
-## Database Setup and Alembic Migrations
+4. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
 
-1. Ensure PostgreSQL is running and the database defined in `DATABASE_URL` is accessible.
-2. The project uses SQLModel models and Alembic for migrations.
-3. Initialize Alembic (run from the `backend/` directory):
-   ```bash
-   alembic init migrations
-   ```
-4. Update `alembic.ini` with your `DATABASE_URL` and edit `migrations/env.py` to import `SQLModel.metadata`.
-5. Generate a migration:
-   ```bash
-   alembic revision --autogenerate -m "create tables"
-   ```
-6. Apply migrations:
+5. **Run migrations:**
    ```bash
    alembic upgrade head
    ```
-7. The database startup hook in `app/main.py` will ensure tables exist and the `pgvector` extension is created when possible.
+
+6. **Start development server:**
+   ```bash
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+## Prerequisites
+
+- Python 3.13+
+- PostgreSQL 14+ with pgvector extension
+- Docker & Docker Compose (for containerized deployment)
+- OpenAI API key
+- Google OAuth credentials
+- HubSpot API credentials (optional)
+
+## Configuration
+
+### Required Environment Variables
+
+```bash
+# API Keys
+OPENAI_API_KEY=sk-...
+
+# Google OAuth
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-secret
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
+
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_advisor
+
+# Security
+SECRET_KEY=your-secret-key-minimum-32-characters
+FRONTEND_URL=http://localhost:5173
+
+# Optional: HubSpot Integration
+HUBSPOT_CLIENT_ID=your-hubspot-client-id
+HUBSPOT_CLIENT_SECRET=your-hubspot-secret
+HUBSPOT_REDIRECT_URI=http://localhost:8000/api/auth/hubspot/callback
+```
+
+See `.env.example` for all available configuration options.
+
+### OAuth Setup
+
+See [OAUTH_SETUP.md](OAUTH_SETUP.md) for detailed instructions on:
+- Creating Google Cloud project
+- Enabling Gmail and Calendar APIs
+- Setting up HubSpot OAuth
+- Configuring redirect URIs
+
+## Database Setup
+
+The project uses **SQLAlchemy** with **PostgreSQL** and **pgvector** for vector search.
+
+### Migrations with Alembic
+
+```bash
+# Generate a new migration after model changes
+alembic revision --autogenerate -m "description of changes"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Rollback last migration
+alembic downgrade -1
+
+# View migration history
+alembic history
+```
+
+### Database Schema
+
+Key models:
+- **User** - User accounts with OAuth tokens
+- **Contact** - HubSpot contacts
+- **Email** - Gmail messages with metadata
+- **VectorItem** - Embedded content for semantic search
+- **MemoryRule** - Persistent AI instructions
+- **Task** - Asynchronous background tasks
 
 ## Background Worker
 
-The application includes a background worker for processing asynchronous tasks (emails, calendar events, contact creation, etc.).
+The application includes a background worker for processing asynchronous tasks.
 
 ### Running the Worker
 
-Start the worker process:
 ```bash
+# With Docker (already running in docker-compose)
+docker-compose logs -f worker
+
+# Locally
 python -m app.services.tasks_worker
 ```
 
 ### Worker Features
 
-- **Polling-based task processing** with configurable interval (default: 5 seconds)
-- **Concurrency control** using `SELECT FOR UPDATE SKIP LOCKED` (max 10 concurrent tasks)
-- **Exponential backoff retry** with configurable max attempts (default: 3)
+- **Polling-based task processing** - Checks for new tasks every 5 seconds
+- **Concurrency control** - Max 10 concurrent tasks using `SELECT FOR UPDATE SKIP LOCKED`
+- **Exponential backoff retry** - Up to 3 attempts with increasing delays
+- **Task types:**
+  - Email sync from Gmail
+  - Calendar event sync
+  - Contact creation/updates
+  - Embedding generation
+  - HubSpot data sync
+
+### Task Monitoring
+
+```bash
+# Check task status in database
+docker exec -it financial-advisor-db psql -U postgres -d financial_advisor -c "SELECT * FROM task ORDER BY created_at DESC LIMIT 10;"
+```
+
+## API Endpoints
+
+### Authentication
+- `GET /api/auth/google/start` - Initiate Google OAuth flow
+- `GET /api/auth/google/callback` - Google OAuth callback
+- `GET /api/auth/hubspot/start` - Initiate HubSpot OAuth flow
+- `GET /api/auth/hubspot/callback` - HubSpot OAuth callback
+- `GET /api/auth/me` - Get current user info
+- `POST /api/auth/logout` - Logout user
+
+### Chat
+- `POST /api/chat/stream` - Stream chat responses with function calling
+
+### Memory Rules
+- `GET /api/rules` - List all memory rules
+- `POST /api/rules` - Create new memory rule
+- `GET /api/rules/{id}` - Get specific rule
+- `PUT /api/rules/{id}` - Update rule
+- `DELETE /api/rules/{id}` - Delete rule
+
+### Embeddings & RAG
+- `POST /api/ingest/emails` - Manually trigger email ingestion
+- `POST /api/ingest/contacts` - Manually trigger contact ingestion
+- `POST /api/embeddings/search` - Search embedded content
+
+### Health
+- `GET /api/health` - Health check endpoint
+- `GET /docs` - Interactive API documentation (Swagger UI)
+- `GET /redoc` - Alternative API documentation (ReDoc)
+
+## AI Function Tools
+
+The AI can execute these functions during conversation:
+
+### Search Tools
+- `search_emails` - Semantic search across all emails
+- `search_contacts` - Search HubSpot contacts
+- `search_deals` - Search HubSpot deals
+- `search_calendar` - Search calendar events
+
+### CRM Tools
+- `get_contact_by_id` - Get detailed contact info
+- `update_contact` - Update contact properties
+- `create_note` - Add note to contact
+- `get_contact_notes` - Retrieve contact notes
+
+### Memory Tools
+- `create_memory_rule` - Create persistent AI instruction
+- `list_memory_rules` - View all memory rules
+
+All tools are defined in `app/services/tools.py` with OpenAI function calling schema.
+
+## Vector Search (RAG)
+
+The system uses **pgvector** for semantic search:
+
+1. **Embedding Generation**
+   - All emails and contacts are embedded using OpenAI `text-embedding-3-small`
+   - Embeddings stored in `vectoritem` table
+   - Automatic chunking for long content
+
+2. **Retrieval**
+   - Cosine similarity search
+   - Configurable top-k results
+   - Metadata filtering by user and type
+
+3. **Augmented Generation**
+   - Retrieved context injected into AI prompts
+   - Source citations in responses
+   - Relevance scoring
+
+Implementation in `app/services/rag.py`
+
+## Security Features
+
+- **OAuth 2.0** with PKCE for secure authentication
+- **httpOnly cookies** for session management
+- **Refresh token rotation** every 7 days
+- **Rate limiting** - 100 requests/minute per IP
+- **PII redaction** in logs (emails, names, tokens)
+- **SQL injection protection** via SQLAlchemy ORM
+- **CORS** - Configured for frontend origin
+- **Input validation** using Pydantic models
+
+## Logging & Observability
+
+- **Structured JSON logging** for production
+- **Request tracing** with correlation IDs
+- **PII redaction filter** automatically removes sensitive data
+- **Performance metrics** for database queries
+- **Error tracking** with full stack traces
+
+Configure log level via `LOG_LEVEL` environment variable.
+
+## Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=app --cov-report=html
+
+# Run specific test file
+pytest tests/test_chat.py
+
+# Run with verbose output
+pytest -v
+```
+
+## 🐛 Troubleshooting
+
+### Database Connection Issues
+
+```bash
+# Check PostgreSQL is running
+docker-compose ps db
+
+# View database logs
+docker-compose logs db
+
+# Connect to database
+docker exec -it financial-advisor-db psql -U postgres -d financial_advisor
+
+# Reset database
+docker-compose down -v
+docker-compose up -d
+alembic upgrade head
+```
+
+### OAuth Errors
+
+- Verify redirect URIs match exactly in Google Cloud Console
+- Check OAuth credentials in `.env`
+- Ensure APIs are enabled (Gmail, Calendar, People)
+- Clear browser cookies and try again
+
+### Import Errors
+
+```bash
+# Verify Python version
+python --version  # Should be 3.13+
+
+# Reinstall dependencies
+pip install -r requirements.txt --upgrade
+
+# Check virtual environment is activated
+which python
+```
+
+### Worker Not Processing Tasks
+
+```bash
+# Check worker logs
+docker-compose logs worker
+
+# Manually check tasks table
+docker exec -it financial-advisor-db psql -U postgres -d financial_advisor -c "SELECT status, COUNT(*) FROM task GROUP BY status;"
+
+# Restart worker
+docker-compose restart worker
+```
+
+## 📚 Project Structure
+
+```
+backend/
+├── app/
+│   ├── api/                    # API route handlers
+│   │   ├── auth_google.py     # Google OAuth
+│   │   ├── auth_hubspot.py    # HubSpot OAuth
+│   │   ├── chat.py            # Chat streaming
+│   │   ├── rules.py           # Memory rules
+│   │   ├── embeddings.py      # Vector search
+│   │   └── ...
+│   ├── core/                  # Core configuration
+│   │   ├── config.py          # Settings and environment
+│   │   ├── database.py        # Database connection
+│   │   ├── security.py        # Security utilities
+│   │   ├── observability.py   # Logging setup
+│   │   └── rate_limiting.py   # Rate limiter
+│   ├── models/                # SQLAlchemy models
+│   │   ├── base.py           # Base model class
+│   │   ├── user.py           # User model
+│   │   ├── contact.py        # Contact model
+│   │   ├── email.py          # Email model
+│   │   ├── vector_item.py    # Embedding model
+│   │   ├── memory_rule.py    # Memory rule model
+│   │   └── task.py           # Background task model
+│   ├── services/              # Business logic
+│   │   ├── tools.py          # AI function tools
+│   │   ├── rag.py            # Vector search/RAG
+│   │   ├── openai_prompts.py # AI prompt templates
+│   │   ├── gmail_sync.py     # Gmail integration
+│   │   ├── calendar_sync.py  # Calendar integration
+│   │   ├── hubspot_sync.py   # HubSpot integration
+│   │   ├── embeddings.py     # Embedding generation
+│   │   ├── embedding_pipeline.py  # Batch embedding
+│   │   ├── memory_rules.py   # Memory rule logic
+│   │   └── tasks_worker.py   # Background worker
+│   ├── utils/                 # Utilities
+│   │   ├── oauth_helpers.py  # OAuth utilities
+│   │   ├── security.py       # Security helpers
+│   │   └── chunking.py       # Text chunking
+│   └── main.py               # FastAPI application
+├── migrations/                # Alembic migrations
+│   └── versions/             # Migration scripts
+├── tests/                    # Test files
+├── .env.example             # Environment template
+├── alembic.ini              # Alembic configuration
+├── docker-compose.yml       # Docker services
+├── Dockerfile               # Backend container
+├── requirements.txt         # Python dependencies
+├── OAUTH_SETUP.md          # OAuth setup guide
+└── README.md               # This file
+```
+
+## 🚀 Deployment
+
+### Docker Production Build
+
+```bash
+# Build image
+docker build -t financial-advisor-backend:latest .
+
+# Run container
+docker run -d \
+  -p 8000:8000 \
+  --env-file .env.production \
+  --name financial-advisor-backend \
+  financial-advisor-backend:latest
+```
+
+### Production Considerations
+
+1. **Environment Variables**
+   - Use production OAuth redirect URIs
+   - Generate secure SECRET_KEY (32+ characters)
+   - Set `ENVIRONMENT=production`
+   - Configure proper CORS origins
+
+2. **Database**
+   - Use managed PostgreSQL service
+   - Enable SSL connections
+   - Set up automated backups
+   - Configure connection pooling
+
+3. **Security**
+   - Enable HTTPS only
+   - Configure rate limiting appropriately
+   - Set up WAF (Web Application Firewall)
+   - Regular security audits
+
+4. **Monitoring**
+   - Set up log aggregation (e.g., ELK stack)
+   - Configure error tracking (e.g., Sentry)
+   - Monitor API performance
+   - Set up alerts for failures
+
+5. **Scaling**
+   - Use load balancer for multiple instances
+   - Scale worker processes independently
+   - Configure Redis for session storage (optional)
+   - Implement caching layer
+
+## 📖 Additional Resources
+
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
+- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
+- [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
+- [pgvector Guide](https://github.com/pgvector/pgvector)
+- [Google OAuth Documentation](https://developers.google.com/identity/protocols/oauth2)
+- [HubSpot API Documentation](https://developers.hubspot.com/docs/api/overview)
+
+## 🤝 Contributing
+
+1. Create a feature branch
+2. Make your changes
+3. Add/update tests
+4. Run linting: `ruff check .`
+5. Run tests: `pytest`
+6. Submit pull request
+
+## 📝 License
+
+This project is private and proprietary.
+
+---
+
+**Built with FastAPI, PostgreSQL, and OpenAI** 🚀
 - **Graceful shutdown** on SIGINT/SIGTERM signals
 - **Orphaned task recovery** on startup (reclaims tasks locked > 5 minutes)
 - **Database row-level locking** for safe multi-worker deployment
