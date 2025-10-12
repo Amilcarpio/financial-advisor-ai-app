@@ -18,8 +18,8 @@ from typing import Optional, Any
 import json
 import logging
 
-from sqlmodel import Session, select, or_
-from sqlalchemy import text
+from sqlalchemy.orm import Session
+from sqlalchemy import select, or_, text
 
 from app.core.database import engine
 from app.models.task import Task
@@ -103,7 +103,7 @@ class TaskWorker:
                 # Find tasks locked longer than timeout
                 timeout_threshold = datetime.utcnow() - timedelta(seconds=self.lock_timeout)
                 
-                orphaned_tasks = db.exec(
+                orphaned_tasks = db.scalars(
                     select(Task).where(
                         Task.state == "in_progress",
                         Task.locked_at != None,  # type: ignore

@@ -30,6 +30,10 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # Application
+      APP_ENV: ${APP_ENV:-development}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      
       # Database
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/financial_advisor
       DEBUG_SQL: "false"
@@ -38,17 +42,17 @@ services:
       # OAuth - Set these in production
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-your-google-client-id}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
-      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/auth/google/callback}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/auth/google/callback}
       
       HUBSPOT_CLIENT_ID: ${HUBSPOT_CLIENT_ID:-your-hubspot-client-id}
       HUBSPOT_CLIENT_SECRET: ${HUBSPOT_CLIENT_SECRET:-your-hubspot-client-secret}
-      HUBSPOT_REDIRECT_URI: ${HUBSPOT_REDIRECT_URI:-http://localhost:8000/auth/hubspot/callback}
+      HUBSPOT_REDIRECT_URI: ${HUBSPOT_REDIRECT_URI:-http://localhost:8000/api/auth/hubspot/callback}
       
       # Security
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
       
       # Frontend
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       
       # OpenAI
       OPENAI_API_KEY: ${OPENAI_API_KEY:-your-openai-api-key}
@@ -57,11 +61,14 @@ services:
         condition: service_healthy
     volumes:
       - ./app:/app/app
+      - oauth_states:/tmp  # Persist OAuth state tokens
     networks:
       - app-network
 
 volumes:
   postgres_data:
+    driver: local
+  oauth_states:
     driver: local
 
 networks:

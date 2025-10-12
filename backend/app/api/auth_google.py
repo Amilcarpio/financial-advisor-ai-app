@@ -1,21 +1,29 @@
 """Google authentication endpoints."""
 import logging
+from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ..core.database import engine
 from ..models.user import User
+from ..services.gmail_sync import GmailSyncService
+from ..services.calendar_sync import CalendarSyncService
+from ..services.embedding_pipeline import EmbeddingPipeline
 from ..utils.oauth_helpers import GoogleOAuthHelper
-from ..utils.security import StateManager, create_session_token
+from ..utils.security import StateManager, create_session_token, get_current_user_optional
 from ..core.config import settings
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth/google", tags=["google-auth"])
+
+# Common auth router for shared endpoints
+auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.get("/start")
@@ -34,10 +42,29 @@ async def google_oauth_start(
         # Generate CSRF state token
         state = StateManager.create_state(user_id=user_id)
         
-        # Get authorization URL
-        authorization_url, _ = GoogleOAuthHelper.get_authorization_url(state)
+        logger.info(f"Created state token: {state[:8]}... for user_id: {user_id}")
         
-        logger.info(f"Starting Google OAuth flow with state: {state[:8]}...")
+        # Get authorization URL - use the state returned by Google OAuth flow
+        authorization_url, actual_state = GoogleOAuthHelper.get_authorization_url(state)
+        
+        # If Google modified the state, update our stored state
+        if actual_state != state:
+            logger.warning(f"Google OAuth modified state from {state[:8]}... to {actual_state[:8]}...")
+            # Remove old state and store the actual state used by Google
+            StateManager.verify_state(state, remove=True)  # Remove old state
+            # Manually store the actual state returned by Google
+            from ..utils.security import StateManager as SM
+            SM._load_states()  # Ensure states are loaded
+            states = SM._load_states()
+            states[actual_state] = {
+                "user_id": user_id,
+                "expiry": datetime.utcnow() + timedelta(seconds=600),
+                "created_at": datetime.utcnow(),
+            }
+            SM._save_states(states)
+            logger.info(f"Stored modified state: {actual_state[:8]}...")
+        
+        logger.info(f"Redirecting to Google OAuth with state: {actual_state[:8]}...")
         
         return RedirectResponse(url=authorization_url, status_code=status.HTTP_302_FOUND)
     
@@ -65,6 +92,8 @@ async def google_oauth_callback(
     Returns:
         Redirect to frontend with session cookie
     """
+    logger.info(f"Google OAuth callback received - state: {state[:8]}... code: {code[:20]}...")
+    
     # Handle OAuth errors
     if error:
         logger.error(f"Google OAuth error: {error}")
@@ -74,9 +103,13 @@ async def google_oauth_callback(
         )
     
     # Verify CSRF state
+    logger.info(f"Verifying state token: {state[:8]}...")
     state_data = StateManager.verify_state(state)
     if state_data is None:
         logger.warning(f"Invalid or expired state token: {state[:8]}...")
+        from ..utils.security import StateManager as SM
+        states = SM._load_states()
+        logger.warning(f"Available states: {list(states.keys())[:3] if states else 'none'}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state token",
@@ -89,11 +122,12 @@ async def google_oauth_callback(
         logger.info("Successfully exchanged Google authorization code")
         
         # Get user info from Google
-        user_email = await _get_user_email_from_google(token_data["access_token"])
+        user_info = await _get_user_info_from_google(token_data["access_token"])
+        user_email = user_info["email"]
         
         # Create or update user
         with Session(engine) as session:
-            user = session.exec(
+            user = session.scalars(
                 select(User).where(User.email == user_email)
             ).first()
             
@@ -101,7 +135,8 @@ async def google_oauth_callback(
                 # Create new user
                 user = User(
                     email=user_email,
-                    google_oauth_tokens=token_data,
+                    full_name=user_info.get("name"),
+                    google_oauth_tokens={**token_data, "picture": user_info.get("picture")},
                     is_active=True,
                 )
                 session.add(user)
@@ -110,18 +145,46 @@ async def google_oauth_callback(
                 logger.info(f"Created new user: {user_email}")
             else:
                 # Update existing user
-                user.google_oauth_tokens = token_data
+                user.full_name = user_info.get("name")
+                user.google_oauth_tokens = {**token_data, "picture": user_info.get("picture")}
                 user.is_active = True
                 user.touch()
                 session.add(user)
                 session.commit()
+                session.refresh(user)
                 logger.info(f"Updated user: {user_email}")
+            
+            # Save user_id before session closes
+            user_id = user.id
+            if user_id is None:
+                raise ValueError("User ID is None after commit")
+            
+            # Auto-sync Gmail emails and Calendar events in background
+            try:
+                logger.info(f"Starting auto-sync for user {user_id}")
+                
+                # Sync Gmail emails
+                gmail_service = GmailSyncService(user=user, db=session)
+                gmail_stats = gmail_service.sync(max_results=100, query="")
+                logger.info(f"Gmail sync completed: {gmail_stats}")
+                
+                # Sync Calendar events
+                calendar_service = CalendarSyncService(user=user, db=session)
+                calendar_stats = calendar_service.sync(max_results=250)
+                logger.info(f"Calendar sync completed: {calendar_stats}")
+                
+                # Generate embeddings for synced emails
+                embedding_pipeline = EmbeddingPipeline(db=session)
+                embedding_stats = embedding_pipeline.process_emails(user_id=user_id)
+                logger.info(f"Embeddings generated: {embedding_stats}")
+            except Exception as sync_error:
+                # Don't fail the auth flow if sync fails
+                logger.error(f"Auto-sync failed (non-fatal): {sync_error}", exc_info=True)
         
-        # Create session token
-        if user.id is None:
-            raise ValueError("User ID is None after commit")
+        # Create session token (outside of session context)
+        session_token = create_session_token(user_id)
         
-        session_token = create_session_token(user.id)
+        logger.info(f"Created session token for user {user_id}, redirecting to {settings.frontend_url}/auth/success")
         
         # Redirect to frontend with session cookie
         response = RedirectResponse(
@@ -139,14 +202,10 @@ async def google_oauth_callback(
             max_age=604800,  # 7 days
         )
         
+        logger.info(f"Set session cookie for user {user_id}")
+        
         return response
     
-    except ValueError as e:
-        logger.error(f"Failed to exchange code: {e}")
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/auth/error?error=code_exchange_failed",
-            status_code=status.HTTP_302_FOUND,
-        )
     except Exception as e:
         logger.error(f"Unexpected error in Google OAuth callback: {e}")
         return RedirectResponse(
@@ -155,17 +214,17 @@ async def google_oauth_callback(
         )
 
 
-async def _get_user_email_from_google(access_token: str) -> str:
-    """Get user email from Google userinfo endpoint.
+async def _get_user_info_from_google(access_token: str) -> dict:
+    """Get user info from Google userinfo endpoint.
     
     Args:
         access_token: Google access token
         
     Returns:
-        User email address
+        Dictionary with user info (email, name, picture)
         
     Raises:
-        ValueError: If unable to get email
+        ValueError: If unable to get user info
     """
     import httpx
     
@@ -182,7 +241,62 @@ async def _get_user_email_from_google(access_token: str) -> str:
             if not email:
                 raise ValueError("No email in userinfo response")
             
-            return email
+            return {
+                "email": email,
+                "name": data.get("name"),
+                "picture": data.get("picture"),
+            }
     except Exception as e:
-        logger.error(f"Failed to get user email from Google: {e}")
-        raise ValueError(f"Failed to get user email: {e}")
+        logger.error(f"Failed to get user info from Google: {e}")
+        raise ValueError(f"Failed to get user info: {e}")
+
+@auth_router.get("/me")
+async def get_current_user_info(current_user: Optional[User] = Depends(get_current_user_optional)):
+    """Get current authenticated user information.
+    
+    Returns user info if authenticated, null if not.
+    
+    Args:
+        current_user: Current authenticated user from session (optional)
+        
+    Returns:
+        User information or null if not authenticated
+    """
+    if current_user is None:
+        return {"user": None}
+    
+    # Get picture from google_oauth_tokens if available
+    picture = None
+    if current_user.google_oauth_tokens:
+        picture = current_user.google_oauth_tokens.get("picture")
+    
+    return {
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.full_name,
+            "picture": picture,
+            "is_active": current_user.is_active,
+            "created_at": current_user.created_at,
+            "updated_at": current_user.updated_at,
+            "hubspot_connected": current_user.hubspot_oauth_tokens is not None,
+        }
+    }
+
+@auth_router.post("/logout")
+async def logout(response: Response):
+    """Logout user by clearing session cookie.
+    
+    Args:
+        response: FastAPI response to set cookie
+        
+    Returns:
+        Success message
+    """
+    response.delete_cookie(
+        key="session",
+        httponly=True,
+        secure=settings.app_env == "production",
+        samesite="lax",
+    )
+    return {"message": "Logged out successfully"}

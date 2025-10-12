@@ -9,7 +9,8 @@ from bs4 import BeautifulSoup
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ..models.email import Email
 from ..models.user import User
@@ -166,7 +167,7 @@ class GmailSyncService:
             stats: Stats dict to update
         """
         # Check if email already exists (idempotency)
-        existing_email = self.db.exec(
+        existing_email = self.db.scalars(
             select(Email).where(Email.gmail_id == message_id)
         ).first()
         
@@ -218,6 +219,9 @@ class GmailSyncService:
         subject = headers.get("subject", "(No Subject)")
         from_address = headers.get("from", "")
         to_address = headers.get("to", "")
+        cc_address = headers.get("cc", "")
+        bcc_address = headers.get("bcc", "")
+        reply_to = headers.get("reply-to", "")
         date_str = headers.get("date", "")
         
         # Parse date
@@ -237,15 +241,28 @@ class GmailSyncService:
         # Sanitize HTML to plain text
         body_text = self._html_to_text(body)
         
+        # Parse email lists
+        to_recipients = [addr.strip() for addr in to_address.split(",")] if to_address else []
+        cc_recipients = [addr.strip() for addr in cc_address.split(",")] if cc_address else []
+        bcc_recipients = [addr.strip() for addr in bcc_address.split(",")] if bcc_address else []
+        
         return {
             "subject": subject,
-            "from_address": from_address,
-            "to_address": to_address,
-            "email_date": email_date,
-            "body": body_text,
-            "headers": headers,
+            "sender": from_address,  # Fixed: was 'from_address', should be 'sender'
+            "reply_to": reply_to,
+            "to_recipients": to_recipients,
+            "cc_recipients": cc_recipients,
+            "bcc_recipients": bcc_recipients,
+            "body_plain": body_text,
+            "body_html": body if "<" in body else None,
+            "snippet": message_data.get("snippet", ""),
+            "received_at": email_date,
+            "sent_at": email_date,
+            "headers_json": headers,
             "thread_id": message_data.get("threadId"),
-            "label_ids": message_data.get("labelIds", [])
+            "labels": message_data.get("labelIds", []),
+            "direction": "inbound" if "INBOX" in message_data.get("labelIds", []) else "outbound",
+            "is_read": "UNREAD" not in message_data.get("labelIds", []),
         }
     
     def _extract_body(self, payload: dict[str, Any]) -> str:

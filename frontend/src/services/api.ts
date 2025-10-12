@@ -52,6 +52,20 @@ class ApiClient {
     return response.data;
   }
 
+  // Ingestion endpoints
+  async ingestGmail(gmailQuery?: string): Promise<any> {
+    const params = gmailQuery ? { gmail_query: gmailQuery } : {};
+    return this.post('/api/ingest/gmail', params);
+  }
+
+  async ingestHubspot(): Promise<any> {
+    return this.post('/api/ingest/hubspot');
+  }
+
+  async getIngestStatus(): Promise<any> {
+    return this.get('/api/ingest/status');
+  }
+
   getBaseUrl(): string {
     return API_BASE_URL;
   }

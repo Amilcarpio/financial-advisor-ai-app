@@ -24,7 +24,8 @@ class ChatService {
     message: string,
     conversationId: string | null,
     onChunk: StreamCallback,
-    onError?: ErrorCallback
+    onError?: ErrorCallback,
+    conversationHistory: Message[] = []
   ): Promise<void> {
     try {
       const baseUrl = apiClient.getBaseUrl();
@@ -32,6 +33,15 @@ class ChatService {
       
       // Close any existing connection
       this.closeStream();
+
+      // Format conversation history for API
+      const formattedHistory = conversationHistory
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .slice(-10) // Keep last 10 messages for context
+        .map(m => ({
+          role: m.role,
+          content: m.content
+        }));
 
       // Use fetch with streaming
       const response = await fetch(url, {
@@ -44,7 +54,7 @@ class ChatService {
         body: JSON.stringify({
           message,
           stream: true,
-          conversation_history: [],
+          conversation_history: formattedHistory,
           source_type: null,
           max_context_chunks: 5,
         }),
@@ -87,9 +97,6 @@ class ChatService {
               if (event.type === 'content') {
                 // Regular text content
                 onChunk(event.data || '', false);
-              } else if (event.type === 'function_call') {
-                // Tool calling notification
-                onChunk(`\n[Using tool: ${event.data.name}]\n`, false);
               } else if (event.type === 'finish') {
                 // Stream finished
                 onChunk('', true);

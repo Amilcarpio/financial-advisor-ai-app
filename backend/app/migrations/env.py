@@ -4,7 +4,6 @@ from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool, String
-from sqlmodel import SQLModel
 
 # Ensure application modules are importable
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -12,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from app.core.config import settings  # noqa: E402
+from app.models.base import Base  # noqa: E402
 from app.models import *  # noqa: F403,F401
 
 config = context.config
@@ -21,7 +21,7 @@ if config.config_file_name is not None:
 if settings.database_url:
     config.set_main_option("sqlalchemy.url", settings.database_url)
 
-target_metadata = SQLModel.metadata
+target_metadata = Base.metadata
 
 
 def render_item(type_, obj, autogen_context):

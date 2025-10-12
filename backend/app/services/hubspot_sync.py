@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Any, Optional
 
 import httpx
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ..models.contact import Contact
 from ..models.user import User
@@ -116,6 +117,72 @@ class HubSpotSyncService:
         
         return stats
     
+    def sync_with_notes(
+        self,
+        max_results: int = 100,
+        include_notes: bool = True,
+        **kwargs: Any
+    ) -> dict[str, Any]:
+        """Sync HubSpot contacts and their notes to database and RAG.
+        
+        Args:
+            max_results: Maximum number of contacts to fetch
+            include_notes: Whether to sync notes for each contact
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dict with sync statistics including notes
+        """
+        # First sync contacts
+        stats = self.sync(max_results=max_results, **kwargs)
+        
+        # Add notes stats
+        stats["total_notes"] = 0
+        stats["notes_synced"] = {}
+        
+        if include_notes:
+            # Import here to avoid circular dependency
+            from .embedding_pipeline import EmbeddingPipeline
+            
+            embedding_pipeline = EmbeddingPipeline(db=self.db)
+            
+            # List contacts with pagination
+            contacts = self._list_contacts(max_results=max_results)
+            
+            for contact_data in contacts:
+                contact_id = contact_data.get("id")
+                if not contact_id:
+                    continue
+                    
+                try:
+                    # Fetch notes for this contact
+                    notes = self.sync_contact_notes(contact_id)
+                    stats["total_notes"] += len(notes)
+                    
+                    if notes:
+                        # Generate embeddings for notes
+                        note_stats = embedding_pipeline.process_contact_notes(
+                            user_id=self.user.id,
+                            contact_id=contact_id,
+                            notes=notes
+                        )
+                        stats["notes_synced"][contact_id] = note_stats
+                        
+                        logger.info(
+                            f"Synced {len(notes)} notes for contact {contact_id}"
+                        )
+                except Exception as e:
+                    error_msg = f"Error syncing notes for contact {contact_id}: {str(e)}"
+                    logger.error(error_msg)
+                    stats["errors"].append(error_msg)
+            
+            logger.info(
+                f"HubSpot notes sync complete: {stats['total_notes']} notes across "
+                f"{len(stats['notes_synced'])} contacts"
+            )
+        
+        return stats
+    
     def _list_contacts(self, max_results: int = 100) -> list[dict[str, Any]]:
         """List contacts from HubSpot API.
         
@@ -138,10 +205,20 @@ class HubSpotSyncService:
                         "lastname",
                         "email",
                         "phone",
+                        "mobilephone",
                         "company",
                         "jobtitle",
+                        "website",
+                        "city",
+                        "state",
+                        "zip",
+                        "country",
+                        "lifecyclestage",
+                        "hs_lead_status",
+                        "lastcontacted",
                         "notes_last_updated",
-                        "hs_all_accessible_team_ids"
+                        "hs_all_accessible_team_ids",
+                        "hubspot_owner_id"
                     ],
                     "associations": ["notes"]
                 }
@@ -188,7 +265,7 @@ class HubSpotSyncService:
             return
         
         # Check if contact already exists (idempotency)
-        existing_contact = self.db.exec(
+        existing_contact = self.db.scalars(
             select(Contact).where(Contact.hubspot_id == hubspot_id)
         ).first()
         
@@ -267,12 +344,13 @@ class HubSpotSyncService:
         }
         
         return {
-            "name": full_name,
-            "email": email,
-            "properties": all_properties,
             "external_source": "hubspot",
-            "created_at": created_at,
-            "updated_at": updated_at
+            "primary_email": email,
+            "first_name": firstname or None,
+            "last_name": lastname or None,
+            "company": company or None,
+            "phone_number": phone or None,
+            "properties_json": all_properties,
         }
     
     def _api_call_with_retry(
@@ -334,3 +412,93 @@ class HubSpotSyncService:
         
         # This should not be reached, but just in case
         raise httpx.HTTPError("Max retries exceeded")
+
+    def sync_contact_notes(self, contact_id: str) -> list[dict[str, Any]]:
+        """Fetch notes for a specific contact from HubSpot.
+        
+        Args:
+            contact_id: HubSpot contact ID
+            
+        Returns:
+            List of note dictionaries with parsed data
+        """
+        notes: list[dict[str, Any]] = []
+        
+        try:
+            # Get associated notes for this contact
+            # HubSpot uses associations to link notes to contacts
+            response = self._api_call_with_retry(
+                lambda: self.client.get(
+                    f"/crm/v3/objects/contacts/{contact_id}/associations/notes"
+                )
+            )
+            
+            if response.status_code != 200:
+                logger.warning(
+                    f"Failed to fetch notes for contact {contact_id}: "
+                    f"{response.status_code} {response.text}"
+                )
+                return notes
+            
+            associations = response.json().get("results", [])
+            note_ids = [assoc.get("id") for assoc in associations if assoc.get("id")]
+            
+            # Fetch detailed note data
+            if note_ids:
+                # Batch fetch notes
+                for note_id in note_ids:
+                    try:
+                        note_response = self._api_call_with_retry(
+                            lambda: self.client.get(
+                                f"/crm/v3/objects/notes/{note_id}",
+                                params={
+                                    "properties": "hs_note_body,hs_timestamp,hubspot_owner_id"
+                                }
+                            )
+                        )
+                        
+                        if note_response.status_code == 200:
+                            note_data = note_response.json()
+                            notes.append(self._parse_note(note_data))
+                        else:
+                            logger.warning(
+                                f"Failed to fetch note {note_id}: "
+                                f"{note_response.status_code}"
+                            )
+                    except Exception as e:
+                        logger.error(f"Error fetching note {note_id}: {e}")
+                        continue
+            
+            logger.info(f"Fetched {len(notes)} notes for contact {contact_id}")
+            
+        except Exception as e:
+            logger.error(f"Error fetching notes for contact {contact_id}: {e}")
+        
+        return notes
+    
+    def _parse_note(self, note_data: dict[str, Any]) -> dict[str, Any]:
+        """Parse HubSpot note data.
+        
+        Args:
+            note_data: Raw HubSpot note data
+            
+        Returns:
+            Dict with parsed note fields
+        """
+        properties = note_data.get("properties", {})
+        
+        # Parse timestamp
+        timestamp_str = properties.get("hs_timestamp", "")
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")) if timestamp_str else datetime.utcnow()
+        except (ValueError, AttributeError):
+            timestamp = datetime.utcnow()
+        
+        return {
+            "id": note_data.get("id"),
+            "body": properties.get("hs_note_body", ""),
+            "timestamp": timestamp,
+            "owner_id": properties.get("hubspot_owner_id"),
+            "created_at": note_data.get("createdAt"),
+            "updated_at": note_data.get("updatedAt"),
+        }

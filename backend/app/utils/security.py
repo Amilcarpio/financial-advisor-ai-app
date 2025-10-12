@@ -1,18 +1,24 @@
 """Security related helpers."""
 import secrets
+import json
+import os
 from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any, Dict, Optional
+import logging
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ..core.config import settings
 from ..core.database import get_session
 from ..core.security import PII_PATTERNS  # Re-export for convenience
 from ..models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 security = HTTPBearer()
@@ -102,11 +108,56 @@ def verify_session_token(token: str) -> int:
 class StateManager:
     """Manages CSRF state tokens for OAuth flows.
     
-    In production, this should use Redis or a database.
-    For now, we use an in-memory dict.
+    WARNING: Current implementation uses local file storage which is NOT suitable
+    for production environments. In production, replace this with:
+    - Redis for distributed state management
+    - Database table with TTL/expiration
+    - Cloud-based session storage (AWS ElastiCache, etc.)
+    
+    Security considerations:
+    - States should expire after 10 minutes
+    - States should be single-use (delete after verification)
+    - File permissions must be restricted (600)
     """
     
-    _states: Dict[str, Dict[str, Any]] = {}
+    _states_file = "/tmp/oauth_states.json"  # INSECURE - use Redis in production!
+    
+    @classmethod
+    def _load_states(cls) -> Dict[str, Dict[str, Any]]:
+        """Load states from disk at startup."""
+        if os.path.exists(cls._states_file):
+            try:
+                with open(cls._states_file, 'r') as f:
+                    data = json.load(f)
+                    # Convert ISO format strings back to datetime objects
+                    for state_data in data.values():
+                        if "expiry" in state_data and isinstance(state_data["expiry"], str):
+                            state_data["expiry"] = datetime.fromisoformat(state_data["expiry"])
+                        if "created_at" in state_data and isinstance(state_data["created_at"], str):
+                            state_data["created_at"] = datetime.fromisoformat(state_data["created_at"])
+                    return data
+            except Exception as e:
+                logger.error(f"Error loading OAuth states: {e}", exc_info=True)
+        return {}
+    
+    @classmethod
+    def _save_states(cls, states: Dict[str, Dict[str, Any]]) -> None:
+        """Persist states to disk."""
+        try:
+            # Convert datetime objects to ISO format strings for JSON serialization
+            serializable_states = {}
+            for key, state_data in states.items():
+                serializable_data = state_data.copy()
+                if "expiry" in serializable_data and isinstance(serializable_data["expiry"], datetime):
+                    serializable_data["expiry"] = serializable_data["expiry"].isoformat()
+                if "created_at" in serializable_data and isinstance(serializable_data["created_at"], datetime):
+                    serializable_data["created_at"] = serializable_data["created_at"].isoformat()
+                serializable_states[key] = serializable_data
+            
+            with open(cls._states_file, 'w') as f:
+                json.dump(serializable_states, f)
+        except Exception as e:
+            logger.error(f"Error saving OAuth states: {e}", exc_info=True)
     
     @classmethod
     def create_state(cls, user_id: Optional[int] = None, ttl_seconds: int = 600) -> str:
@@ -122,14 +173,16 @@ class StateManager:
         state = generate_state_token()
         expiry = datetime.utcnow() + timedelta(seconds=ttl_seconds)
         
-        cls._states[state] = {
+        states = cls._load_states()
+        states[state] = {
             "user_id": user_id,
             "expiry": expiry,
             "created_at": datetime.utcnow(),
         }
         
         # Cleanup expired states
-        cls._cleanup_expired()
+        cls._cleanup_expired(states)
+        cls._save_states(states)
         
         return state
     
@@ -144,33 +197,37 @@ class StateManager:
         Returns:
             State data if valid, None otherwise
         """
-        cls._cleanup_expired()
+        states = cls._load_states()
+        cls._cleanup_expired(states)
         
-        state_data = cls._states.get(state)
+        state_data = states.get(state)
         
         if state_data is None:
+            cls._save_states(states)
             return None
         
         if datetime.utcnow() > state_data["expiry"]:
             if remove:
-                cls._states.pop(state, None)
+                states.pop(state, None)
+            cls._save_states(states)
             return None
         
         if remove:
-            cls._states.pop(state, None)
+            states.pop(state, None)
         
+        cls._save_states(states)
         return state_data
     
     @classmethod
-    def _cleanup_expired(cls) -> None:
+    def _cleanup_expired(cls, states: Dict[str, Dict[str, Any]]) -> None:
         """Remove expired states from storage."""
         now = datetime.utcnow()
         expired_keys = [
-            key for key, data in cls._states.items()
+            key for key, data in states.items()
             if now > data["expiry"]
         ]
         for key in expired_keys:
-            cls._states.pop(key, None)
+            states.pop(key, None)
 
 
 async def get_current_user(
@@ -192,12 +249,67 @@ async def get_current_user(
     token = credentials.credentials
     user_id = verify_session_token(token)
     
-    user = db.exec(select(User).where(User.id == user_id)).first()
+    user = db.scalars(select(User).where(User.id == user_id)).first()
     
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
+        )
+    
+    return user
+
+
+async def get_current_user_optional(
+    request: Request,
+    db: Session = Depends(get_session)
+) -> Optional[User]:
+    """Get current authenticated user from JWT token in cookie, or None if not authenticated.
+    
+    Args:
+        request: FastAPI request object
+        db: Database session
+        
+    Returns:
+        Current user or None if not authenticated
+    """
+    # Get session token from httpOnly cookie
+    session_token = request.cookies.get("session")
+    
+    if not session_token:
+        return None
+        
+    try:
+        user_id = verify_session_token(session_token)
+        user = db.scalars(select(User).where(User.id == user_id)).first()
+        return user
+    except Exception:
+        # Token invalid, expired, or user not found
+        return None
+
+
+async def get_current_user_from_cookie(
+    request: Request,
+    db: Session = Depends(get_session)
+) -> User:
+    """Get current authenticated user from JWT token in cookie.
+    
+    Args:
+        request: FastAPI request object
+        db: Database session
+        
+    Returns:
+        Current user
+        
+    Raises:
+        HTTPException: If not authenticated or user not found
+    """
+    user = await get_current_user_optional(request, db)
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authenticated"
         )
     
     return user

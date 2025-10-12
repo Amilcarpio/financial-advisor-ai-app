@@ -2,7 +2,8 @@
 import logging
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.models.email import Email
 from app.models.contact import Contact
@@ -62,7 +63,7 @@ class EmbeddingPipeline:
         else:
             stmt = select(Email).where(Email.user_id == user_id)
         
-        emails = self.db.exec(stmt).all()
+        emails = self.db.scalars(stmt).all()
         
         if not emails:
             logger.info(f"No emails found for user {user_id}")
@@ -196,7 +197,7 @@ class EmbeddingPipeline:
         else:
             stmt = select(Contact).where(Contact.user_id == user_id)
         
-        contacts = self.db.exec(stmt).all()
+        contacts = self.db.scalars(stmt).all()
         
         if not contacts:
             logger.info(f"No contacts found for user {user_id}")
@@ -242,16 +243,38 @@ class EmbeddingPipeline:
                 if contact.company:
                     contact_parts.append(f"Company: {contact.company}")
                 
+                # Extract additional fields from properties_json
+                if contact.properties_json:
+                    job_title = contact.properties_json.get("jobtitle")
+                    if job_title:
+                        contact_parts.append(f"Job Title: {job_title}")
+                    
+                    website = contact.properties_json.get("website")
+                    if website:
+                        contact_parts.append(f"Website: {website}")
+                    
+                    city = contact.properties_json.get("city")
+                    state = contact.properties_json.get("state")
+                    country = contact.properties_json.get("country")
+                    location_parts = [p for p in [city, state, country] if p]
+                    if location_parts:
+                        contact_parts.append(f"Location: {', '.join(location_parts)}")
+                
                 # Lifecycle stage
                 if contact.lifecycle_stage:
-                    contact_parts.append(f"Stage: {contact.lifecycle_stage}")
+                    contact_parts.append(f"Lifecycle Stage: {contact.lifecycle_stage}")
                 
-                # Add properties as JSON text
+                # Add remaining properties as JSON text
                 if contact.properties_json:
+                    # Skip already processed fields
+                    skip_keys = {"firstname", "lastname", "email", "phone", "company", 
+                                "jobtitle", "website", "city", "state", "country", 
+                                "lifecyclestage", "zip"}
+                    
                     props_text = "\n".join(
                         f"{key}: {value}"
                         for key, value in contact.properties_json.items()
-                        if value
+                        if value and key not in skip_keys
                     )
                     if props_text:
                         contact_parts.append(f"\nAdditional Info:\n{props_text}")
@@ -322,6 +345,127 @@ class EmbeddingPipeline:
         
         logger.info(
             f"Processed {stats['total_contacts']} contacts -> "
+            f"{stats['total_chunks']} chunks -> "
+            f"{stats['total_vectors']} vectors "
+            f"({stats['errors']} errors)"
+        )
+        
+        return stats
+    
+    def process_contact_notes(
+        self,
+        user_id: int,
+        contact_id: str,
+        notes: list[dict[str, Any]],
+        batch_size: int = 50
+    ) -> dict[str, Any]:
+        """Generate embeddings for contact notes from HubSpot.
+        
+        Args:
+            user_id: User ID
+            contact_id: HubSpot contact ID
+            notes: List of parsed note dictionaries from HubSpotSyncService
+            batch_size: Batch size for embedding generation
+            
+        Returns:
+            Statistics dict with counts
+        """
+        if not notes:
+            logger.info(f"No notes to process for contact {contact_id}")
+            return {
+                "total_notes": 0,
+                "total_chunks": 0,
+                "total_vectors": 0,
+                "errors": 0
+            }
+        
+        logger.info(f"Processing {len(notes)} notes for contact {contact_id}")
+        
+        stats = {
+            "total_notes": len(notes),
+            "total_chunks": 0,
+            "total_vectors": 0,
+            "errors": 0
+        }
+        
+        # Process notes in batches
+        all_chunks = []
+        chunk_metadata = []
+        
+        for note in notes:
+            try:
+                note_id = note.get("id")
+                note_body = note.get("body", "")
+                timestamp = note.get("timestamp")
+                
+                if not note_body.strip():
+                    logger.warning(f"Note {note_id} has no content, skipping")
+                    continue
+                
+                # Build note text with metadata
+                timestamp_str = timestamp.strftime('%Y-%m-%d %H:%M') if timestamp else 'Unknown date'
+                note_text = f"[HubSpot Note from {timestamp_str}]\n{note_body}"
+                
+                # Chunk note text
+                chunks = self.chunker.chunk_text(
+                    note_text,
+                    metadata={
+                        "note_id": note_id,
+                        "contact_id": contact_id,
+                        "timestamp": timestamp.isoformat() if timestamp else None,
+                        "owner_id": note.get("owner_id")
+                    }
+                )
+                
+                stats["total_chunks"] += len(chunks)
+                
+                # Collect chunks and metadata for batch processing
+                for chunk in chunks:
+                    all_chunks.append(chunk["text"])
+                    chunk_metadata.append({
+                        "note_id": note_id,
+                        "contact_id": contact_id,
+                        "chunk_index": chunk["metadata"]["chunk_index"],
+                        "metadata": chunk["metadata"]
+                    })
+            
+            except Exception as e:
+                logger.error(f"Error processing note {note.get('id')}: {e}", exc_info=True)
+                stats["errors"] += 1
+        
+        # Generate embeddings in batches
+        if all_chunks:
+            try:
+                logger.info(f"Generating embeddings for {len(all_chunks)} note chunks")
+                embeddings = self.embedding_service.embed_batch(
+                    all_chunks,
+                    batch_size=batch_size
+                )
+                
+                # Store vector items
+                for i, embedding in enumerate(embeddings):
+                    meta = chunk_metadata[i]
+                    try:
+                        self.rag_service.upsert_vector_item(
+                            user_id=user_id,
+                            text=all_chunks[i],
+                            embedding=embedding,
+                            source_type="hubspot_note",
+                            source_id=meta["note_id"],
+                            chunk_index=meta["chunk_index"],
+                            metadata=meta["metadata"]
+                        )
+                        stats["total_vectors"] += 1
+                    except Exception as e:
+                        logger.error(f"Error storing vector item: {e}", exc_info=True)
+                        stats["errors"] += 1
+            
+            except Exception as e:
+                logger.error(f"Error generating embeddings: {e}", exc_info=True)
+                stats["errors"] += len(all_chunks)
+        
+        logger.info(
+            f"Processed {stats['total_notes']} notes -> "
             f"{stats['total_chunks']} chunks -> "
             f"{stats['total_vectors']} vectors "
             f"({stats['errors']} errors)"

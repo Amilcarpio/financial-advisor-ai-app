@@ -2,7 +2,8 @@
 import logging
 from typing import Any
 
-from sqlmodel import Session, select, col
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 from pgvector.sqlalchemy import Vector
 
 from app.models.vector_item import VectorItem
@@ -22,7 +23,7 @@ class RAGService:
         db: Session,
         embedding_service: EmbeddingService | None = None,
         top_k: int = 5,
-        similarity_threshold: float = 0.7
+        similarity_threshold: float = 0.2  # Lower threshold for better recall
     ):
         """Initialize RAG service.
         
@@ -75,28 +76,55 @@ class RAGService:
         if source_type:
             stmt = stmt.where(VectorItem.source_type == source_type)
         
-        # Get all matching vectors (we'll calculate similarity in Python for now)
-        # TODO: Use native pgvector operators when SQLModel supports them better
-        results = self.db.exec(stmt).all()
+        # Calculate similarity in Python (native pgvector operators pending SQLModel support)
+        results = self.db.scalars(stmt).all()
         
         # Calculate cosine similarity for each result
         scored_results = []
         for vector_item in results:
-            if vector_item.embedding:
+            if vector_item.embedding is not None and len(vector_item.embedding) > 0:
                 similarity = self._cosine_similarity(
                     query_embedding,
                     vector_item.embedding
                 )
                 if similarity >= self.similarity_threshold:
-                    scored_results.append((vector_item, similarity))
+                    # Apply recency boost for calendar events
+                    final_score = similarity
+                    if vector_item.source_type == "calendar" and vector_item.metadata_json:
+                        from datetime import datetime, timezone
+                        start_time_str = vector_item.metadata_json.get("start")
+                        if start_time_str:
+                            try:
+                                start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                                now = datetime.now(timezone.utc)
+                                days_diff = (start_time - now).days  # Positive for future, negative for past
+                                
+                                # Boost for temporal proximity (both recent past and near future)
+                                if days_diff >= -30 and days_diff <= 30:  # Within 30 days in either direction
+                                    # Future events (tomorrow, next week): strong boost
+                                    if days_diff >= 0:
+                                        # Higher boost for nearer future events
+                                        recency_boost = 0.6 * (1 - days_diff / 30) ** 2  # 0.6 for today/tomorrow, decreasing
+                                        logger.debug(f"Calendar event in {days_diff} days (FUTURE): sim={similarity:.3f}, boost={recency_boost:.3f}, final={similarity + recency_boost:.3f}")
+                                    else:
+                                        # Past events: boost for recent ones
+                                        days_ago = abs(days_diff)
+                                        recency_boost = 0.5 * (1 - days_ago / 30) ** 2  # 0.5 for today, decreasing
+                                        logger.debug(f"Calendar event {days_ago} days ago (PAST): sim={similarity:.3f}, boost={recency_boost:.3f}, final={similarity + recency_boost:.3f}")
+                                    
+                                    final_score = min(1.0, similarity + recency_boost)
+                            except (ValueError, AttributeError):
+                                pass
+                    
+                    scored_results.append((vector_item, similarity, final_score))
         
-        # Sort by similarity descending and take top k
-        scored_results.sort(key=lambda x: x[1], reverse=True)
+        # Sort by final score (similarity + recency boost) descending and take top k
+        scored_results.sort(key=lambda x: x[2], reverse=True)
         scored_results = scored_results[:k]
         
         # Format results
         search_results = []
-        for vector_item, sim in scored_results:
+        for vector_item, sim, final_score in scored_results:
             result = {
                 "text": vector_item.text,
                 "similarity": float(sim),
@@ -268,7 +296,7 @@ class RAGService:
         source_id_str = str(source_id)
         
         # Check if vector item already exists
-        existing = self.db.exec(
+        existing = self.db.scalars(
             select(VectorItem)
             .where(VectorItem.user_id == user_id)
             .where(VectorItem.source_type == source_type)
@@ -327,7 +355,7 @@ class RAGService:
             VectorItem.source_type == source_type,
             VectorItem.source_id == source_id_str
         )
-        items = self.db.exec(stmt).all()
+        items = self.db.scalars(stmt).all()
         
         for item in items:
             self.db.delete(item)

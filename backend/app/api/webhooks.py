@@ -15,7 +15,8 @@ import json
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Request, HTTPException, Depends, Header
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import get_session
@@ -24,7 +25,7 @@ from app.models.user import User
 from app.services.memory_rules import evaluate_rules_for_event
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 # In-memory store for webhook replay protection (use Redis in production)
 _processed_webhook_ids: set[str] = set()
@@ -143,7 +144,7 @@ async def hubspot_webhook(
         # Find user by HubSpot portal ID (stored in hubspot_oauth_tokens)
         # For MVP, we'll just use the first user with HubSpot connected
         # In production, store portal_id in User model
-        user = db.exec(
+        user = db.scalars(
             select(User).where(User.hubspot_oauth_tokens != None)  # type: ignore
         ).first()
         
@@ -232,7 +233,7 @@ async def gmail_webhook(
         raise HTTPException(status_code=400, detail="Missing emailAddress")
     
     # Find user by email
-    user = db.exec(select(User).where(User.email == email_address)).first()
+    user = db.scalars(select(User).where(User.email == email_address)).first()
     
     if not user:
         logger.warning(f"No user found for Gmail webhook: {email_address}")
@@ -302,7 +303,7 @@ async def calendar_webhook(
     
     # For MVP, we'll trigger a full calendar sync for all users
     # In production, store channel_id -> user mapping
-    users = db.exec(
+    users = db.scalars(
         select(User).where(User.google_oauth_tokens != None)  # type: ignore
     ).all()
     

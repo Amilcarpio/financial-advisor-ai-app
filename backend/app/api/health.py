@@ -10,7 +10,8 @@ import logging
 from typing import Dict, Any
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
-from sqlmodel import text, Session
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.database import engine
 

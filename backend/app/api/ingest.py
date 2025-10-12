@@ -4,23 +4,25 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.models.user import User
 from app.services.gmail_sync import GmailSyncService
+from app.services.calendar_sync import CalendarSyncService
 from app.services.hubspot_sync import HubSpotSyncService
-from app.utils.security import get_current_user
+from app.services.embedding_pipeline import EmbeddingPipeline
+from app.utils.security import get_current_user_from_cookie
 
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/ingest", tags=["ingest"])
+router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
 class IngestRequest(BaseModel):
     """Request model for triggering data ingestion."""
     
-    source: str = Field(..., description="Data source: 'gmail' or 'hubspot'")
+    source: str = Field(..., description="Data source: 'gmail', 'calendar', or 'hubspot'")
     max_results: int | None = Field(
         default=None,
         description="Max items to ingest (None = all)",
@@ -30,6 +32,10 @@ class IngestRequest(BaseModel):
     gmail_query: str | None = Field(
         default=None,
         description="Gmail query filter (e.g., 'is:unread')"
+    )
+    calendar_id: str | None = Field(
+        default="primary",
+        description="Calendar ID to sync (default: 'primary')"
     )
 
 
@@ -48,7 +54,7 @@ class IngestResponse(BaseModel):
 @router.post("", response_model=IngestResponse)
 async def ingest_data(
     request: IngestRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_session)
 ) -> IngestResponse:
     """Trigger data ingestion from external source.
@@ -75,13 +81,15 @@ async def ingest_data(
     try:
         if request.source == "gmail":
             return await _ingest_gmail(request, current_user, db)
+        elif request.source == "calendar":
+            return await _ingest_calendar(request, current_user, db)
         elif request.source == "hubspot":
             return await _ingest_hubspot(request, current_user, db)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid source: {request.source}. "
-                       f"Must be 'gmail' or 'hubspot'."
+                       f"Must be 'gmail', 'calendar', or 'hubspot'."
             )
     except HTTPException:
         raise
@@ -128,6 +136,18 @@ async def _ingest_gmail(
         query=request.gmail_query or ""
     )
     
+    # Generate embeddings for the synced emails
+    logger.info(f"Generating embeddings for user {user.id}")
+    embedding_pipeline = EmbeddingPipeline(db=db)
+    embedding_stats = embedding_pipeline.process_emails(user_id=user.id)
+    
+    # Merge stats
+    stats.update({
+        "embeddings_generated": embedding_stats.get("total_vectors", 0),
+        "chunks_created": embedding_stats.get("total_chunks", 0),
+        "embedding_errors": embedding_stats.get("errors", 0)
+    })
+    
     # Build response
     return IngestResponse(
         status="success",
@@ -136,7 +156,57 @@ async def _ingest_gmail(
             f"Gmail sync complete. "
             f"Fetched {stats['total_fetched']} messages, "
             f"created {stats['new_emails']} new emails, "
-            f"updated {stats['updated_emails']} existing emails."
+            f"updated {stats['updated_emails']} existing emails. "
+            f"Generated {stats['embeddings_generated']} embeddings."
+        ),
+        stats=stats
+    )
+
+
+async def _ingest_calendar(
+    request: IngestRequest,
+    user: User,
+    db: Session
+) -> IngestResponse:
+    """Ingest Google Calendar events.
+    
+    Args:
+        request: Ingest request
+        user: Current user
+        db: Database session
+        
+    Returns:
+        IngestResponse with Calendar sync statistics
+        
+    Raises:
+        HTTPException: If OAuth tokens are missing
+    """
+    # Check OAuth tokens
+    if not user.google_oauth_tokens:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google OAuth tokens not found. "
+                   "Please authenticate with Google first."
+        )
+    
+    # Initialize Calendar sync service
+    calendar_service = CalendarSyncService(user=user, db=db)
+    
+    # Run sync (sync methods are not async)
+    stats = calendar_service.sync(
+        max_results=request.max_results or 100,
+        calendar_id=request.calendar_id or "primary"
+    )
+    
+    # Build response (embeddings are generated directly in the sync service)
+    return IngestResponse(
+        status="success",
+        source="calendar",
+        message=(
+            f"Calendar sync complete. "
+            f"Fetched {stats['total_fetched']} events, "
+            f"created {stats['new_events']} new events, "
+            f"updated {stats['updated_events']} existing events."
         ),
         stats=stats
     )
@@ -174,6 +244,18 @@ async def _ingest_hubspot(
     # Run sync (sync methods are not async)
     stats = hubspot_service.sync(max_results=request.max_results or 100)
     
+    # Generate embeddings for the synced contacts
+    logger.info(f"Generating embeddings for HubSpot contacts for user {user.id}")
+    embedding_pipeline = EmbeddingPipeline(db=db)
+    embedding_stats = embedding_pipeline.process_contacts(user_id=user.id)
+    
+    # Merge stats
+    stats.update({
+        "embeddings_generated": embedding_stats.get("total_vectors", 0),
+        "chunks_created": embedding_stats.get("total_chunks", 0),
+        "embedding_errors": embedding_stats.get("errors", 0)
+    })
+    
     # Build response
     return IngestResponse(
         status="success",
@@ -182,7 +264,8 @@ async def _ingest_hubspot(
             f"HubSpot sync complete. "
             f"Fetched {stats['total_fetched']} contacts, "
             f"created {stats['new_contacts']} new contacts, "
-            f"updated {stats['updated_contacts']} existing contacts."
+            f"updated {stats['updated_contacts']} existing contacts. "
+            f"Generated {stats['embeddings_generated']} embeddings."
         ),
         stats=stats
     )
@@ -190,7 +273,7 @@ async def _ingest_hubspot(
 
 @router.get("/status", response_model=dict[str, Any])
 async def get_ingest_status(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_from_cookie)
 ) -> dict[str, Any]:
     """Get ingestion status for current user.
     
@@ -200,6 +283,7 @@ async def get_ingest_status(
     return {
         "user_id": current_user.id,
         "gmail_connected": bool(current_user.google_oauth_tokens),
+        "calendar_connected": bool(current_user.google_oauth_tokens),
         "hubspot_connected": bool(current_user.hubspot_oauth_tokens)
     }
 
@@ -207,7 +291,7 @@ async def get_ingest_status(
 @router.post("/gmail", response_model=IngestResponse)
 async def ingest_gmail_endpoint(
     gmail_query: str | None = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_session)
 ) -> IngestResponse:
     """Ingest emails from Gmail.
@@ -222,9 +306,33 @@ async def ingest_gmail_endpoint(
     return await _ingest_gmail(request, current_user, db)
 
 
+@router.post("/calendar", response_model=IngestResponse)
+async def ingest_calendar_endpoint(
+    calendar_id: str = "primary",
+    max_results: int = 250,
+    current_user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_session)
+) -> IngestResponse:
+    """Ingest events from Google Calendar.
+    
+    Args:
+        calendar_id: Calendar ID to sync (default: 'primary')
+        max_results: Maximum number of events to fetch (default: 250)
+        
+    Returns:
+        IngestResponse with status and statistics
+    """
+    request = IngestRequest(
+        source="calendar",
+        calendar_id=calendar_id,
+        max_results=max_results
+    )
+    return await _ingest_calendar(request, current_user, db)
+
+
 @router.post("/hubspot", response_model=IngestResponse)
 async def ingest_hubspot_endpoint(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_session)
 ) -> IngestResponse:
     """Ingest contacts from HubSpot.

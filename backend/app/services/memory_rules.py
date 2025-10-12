@@ -11,7 +11,8 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.models.memory_rule import MemoryRule
 from app.models.task import Task
@@ -144,7 +145,7 @@ class RuleEvaluator:
         Returns: Number of rules triggered
         """
         # Get active rules for user
-        rules = self.db.exec(
+        rules = self.db.scalars(
             select(MemoryRule)
             .where(MemoryRule.user_id == user.id)
             .where(MemoryRule.is_active == True)

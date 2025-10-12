@@ -4,56 +4,45 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from sqlalchemy import JSON, Column, Index, String
-from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import Base
 
 if TYPE_CHECKING:  # pragma: no cover
     from .user import User
 
 
-class Email(SQLModel, table=True):
+class Email(Base):
     """Inbound or outbound email metadata."""
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="user.id", index=True, nullable=False)
-    gmail_id: str = Field(sa_column=Column(String(255), unique=True, nullable=False))
-    thread_id: Optional[str] = Field(default=None)
-    history_id: Optional[str] = Field(default=None)
-    subject: Optional[str] = Field(default=None)
-    snippet: Optional[str] = Field(default=None)
-    body_plain: Optional[str] = Field(default=None)
-    body_html: Optional[str] = Field(default=None)
-    sender: Optional[str] = Field(default=None)
-    reply_to: Optional[str] = Field(default=None)
-    to_recipients: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False, default=list),
-    )
-    cc_recipients: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False, default=list),
-    )
-    bcc_recipients: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False, default=list),
-    )
-    labels: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False, default=list),
-    )
-    headers_json: Dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSON, nullable=False, default=dict),
-    )
-    direction: str = Field(default="inbound")
-    is_read: bool = Field(default=True)
-    received_at: Optional[datetime] = Field(default=None)
-    sent_at: Optional[datetime] = Field(default=None)
-    external_source: Optional[str] = Field(default="gmail")
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    __tablename__ = "email"
 
-    user: "User" = Relationship(back_populates="emails")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False, index=True)
+    gmail_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    thread_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    history_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    subject: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    body_plain: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    body_html: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    reply_to: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    to_recipients: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    cc_recipients: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    bcc_recipients: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    labels: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    headers_json: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    direction: Mapped[str] = mapped_column(String, nullable=False, default="inbound")
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    received_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    external_source: Mapped[Optional[str]] = mapped_column(String, nullable=False, default="gmail")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped[Optional["User"]] = relationship(back_populates="emails")
 
     __table_args__ = (
         Index("ix_email_thread_id", "thread_id"),

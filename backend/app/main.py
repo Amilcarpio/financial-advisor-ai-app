@@ -8,9 +8,9 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import text
+from sqlalchemy import text
 
-from app.api import auth_google, auth_hubspot, ingest, embeddings, chat, webhooks, health
+from app.api import auth_google, auth_hubspot, ingest, embeddings, chat, webhooks, health, rules
 from app.core.config import settings
 from app.core.database import engine, create_db_and_tables
 from app.core.security import SecurityHeadersMiddleware, setup_security_logging
@@ -27,6 +27,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Application lifespan manager.
     Handles startup and shutdown events.
     """
+    # Security check: Validate SECRET_KEY
+    if settings.secret_key == "dev-secret-key-change-in-production-min-32-characters":
+        if settings.app_env == "production":
+            logger.error("CRITICAL: Default SECRET_KEY detected in production!")
+            raise ValueError("Must set custom SECRET_KEY in production")
+        logger.warning("WARNING: Using default SECRET_KEY - DO NOT use in production!")
+    
+    if len(settings.secret_key) < 32:
+        raise ValueError("SECRET_KEY must be at least 32 characters long")
+    
     # Startup: Create database tables and pgvector extension
     create_db_and_tables()
     
@@ -58,10 +68,12 @@ app.add_middleware(CorrelationIdMiddleware)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url] if settings.frontend_url else ["http://localhost:3000"],
+    allow_origins=[settings.frontend_url] if settings.frontend_url else ["http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Correlation-ID", "X-Requested-With"],
+    expose_headers=["X-Correlation-ID"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 # Configure rate limiting
@@ -74,12 +86,14 @@ setup_metrics(app)
 
 # Mount API routers
 app.include_router(health.router)  # Health checks first
-app.include_router(auth_google.router, tags=["auth"])
-app.include_router(auth_hubspot.router, tags=["auth"])
-app.include_router(ingest.router)
-app.include_router(embeddings.router)
-app.include_router(chat.router)
-app.include_router(webhooks.router)
+app.include_router(auth_google.auth_router, prefix="/api", tags=["auth"])
+app.include_router(auth_google.router, prefix="/api", tags=["auth"])
+app.include_router(auth_hubspot.router, prefix="/api", tags=["auth"])
+app.include_router(ingest.router, prefix="/api")
+app.include_router(embeddings.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
+app.include_router(webhooks.router, prefix="/api")
+app.include_router(rules.router)  # Memory Rules API
 
 
 @app.get("/")

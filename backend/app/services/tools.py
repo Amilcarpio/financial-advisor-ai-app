@@ -14,20 +14,138 @@ from datetime import datetime
 from typing import Any, Optional
 import json
 import base64
+import logging
 from email.mime.text import MIMEText
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import httpx
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.models.user import User
 from app.models.task import Task
 from app.core.config import settings
 
 
-# Rate limiting tracking (in-memory, should use Redis in production)
+logger = logging.getLogger(__name__)
+
+
+async def _sync_calendar_event_to_vector_store(
+    event_id: str,
+    user: User,
+    db: Session,
+    event_data: Optional[dict[str, Any]] = None,
+    delete: bool = False,
+) -> None:
+    """
+    Synchronize a calendar event with the vector store.
+    
+    Args:
+        event_id: Google Calendar event ID
+        user: User who owns the event
+        db: Database session
+        event_data: Event data from Google Calendar (required if not deleting)
+        delete: If True, removes from vector store. If False, adds/updates.
+    """
+    from app.models.vector_item import VectorItem
+    from app.services.embeddings import EmbeddingService
+    
+    try:
+        if delete:
+            # Remove from vector store
+            deleted_count = db.query(VectorItem).filter(
+                VectorItem.user_id == user.id,
+                VectorItem.source_type == "calendar",
+                VectorItem.source_id == event_id
+            ).delete()
+            db.commit()
+            
+            if deleted_count > 0:
+                logger.info(f"Removed {deleted_count} calendar event(s) from vector store for event {event_id}")
+        else:
+            if not event_data:
+                logger.warning(f"Cannot sync calendar event {event_id} without event_data")
+                return
+            
+            # Format event for embedding
+            summary = event_data.get('summary', 'Untitled Event')
+            start = event_data.get('start', {})
+            end = event_data.get('end', {})
+            description = event_data.get('description', '')
+            location = event_data.get('location', '')
+            attendees = event_data.get('attendees', [])
+            
+            # Build text representation
+            text_parts = [f"Event: {summary}"]
+            
+            if start.get('dateTime'):
+                text_parts.append(f"Start: {start['dateTime']}")
+            elif start.get('date'):
+                text_parts.append(f"Date: {start['date']}")
+            
+            if end.get('dateTime'):
+                text_parts.append(f"End: {end['dateTime']}")
+            elif end.get('date'):
+                text_parts.append(f"End Date: {end['date']}")
+            
+            if location:
+                text_parts.append(f"Location: {location}")
+            
+            if description:
+                text_parts.append(f"Description: {description}")
+            
+            if attendees:
+                attendee_emails = [a.get('email', '') for a in attendees if a.get('email')]
+                if attendee_emails:
+                    text_parts.append(f"Attendees: {', '.join(attendee_emails)}")
+            
+            text_parts.append(f"Event ID: {event_id}")
+            
+            text = "\n".join(text_parts)
+            
+            # Generate embedding
+            embedding_service = EmbeddingService()
+            embedding = embedding_service.embed_text(text)
+            
+            # Check if already exists
+            existing = db.query(VectorItem).filter(
+                VectorItem.user_id == user.id,
+                VectorItem.source_type == "calendar",
+                VectorItem.source_id == event_id
+            ).first()
+            
+            if existing:
+                # Update existing
+                existing.text = text
+                existing.embedding = embedding
+                existing.metadata_json = event_data
+                existing.touch()
+                logger.info(f"Updated calendar event {event_id} in vector store")
+            else:
+                # Create new
+                vector_item = VectorItem(
+                    user_id=user.id,
+                    source_type="calendar",
+                    source_id=event_id,
+                    text=text,
+                    embedding=embedding,
+                    metadata_json=event_data,
+                )
+                db.add(vector_item)
+                logger.info(f"Added calendar event {event_id} to vector store")
+            
+            db.commit()
+            
+    except Exception as e:
+        logger.error(f"Failed to sync calendar event {event_id} to vector store: {e}")
+        db.rollback()
+
+
+# WARNING: In-memory rate limiting does NOT work in production with load balancers
+# or multiple server instances. Use Redis with a sliding window algorithm instead.
+# Example: redis.incr(f"email_rate:{user_id}:{hour}", expire=3600)
 _email_rate_limits: dict[int, list[datetime]] = {}
 MAX_EMAILS_PER_HOUR = 50
 MAX_EMAILS_GLOBAL_PER_HOUR = 500
@@ -195,6 +313,7 @@ async def schedule_event(
     description: Optional[str] = None,
     attendees: Optional[list[str]] = None,
     location: Optional[str] = None,
+    db: Optional[Session] = None,
 ) -> dict[str, Any]:
     """
     Schedule a calendar event via Google Calendar API.
@@ -207,6 +326,7 @@ async def schedule_event(
         description: Optional event description
         attendees: Optional list of attendee email addresses
         location: Optional event location
+        db: Database session for syncing to vector store
         
     Returns:
         Dict with event details and link
@@ -251,6 +371,16 @@ async def schedule_event(
             sendUpdates='all' if attendees else 'none'
         ).execute()
         
+        # Sync to vector store
+        if db:
+            await _sync_calendar_event_to_vector_store(
+                event_id=result.get('id'),
+                user=user,
+                db=db,
+                event_data=result,
+                delete=False,
+            )
+        
         return {
             "status": "success",
             "event_id": result.get('id'),
@@ -259,6 +389,7 @@ async def schedule_event(
             "start": result.get('start', {}).get('dateTime'),
             "end": result.get('end', {}).get('dateTime'),
             "attendees": attendees or [],
+            "event": result,  # Return full event data
         }
         
     except HttpError as e:
@@ -266,6 +397,170 @@ async def schedule_event(
         raise ToolExecutionError(f"Calendar API error: {error_details}")
     except Exception as e:
         raise ToolExecutionError(f"Failed to schedule event: {str(e)}")
+
+
+async def update_event(
+    user: User,
+    event_id: str,
+    summary: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    description: Optional[str] = None,
+    attendees: Optional[list[str]] = None,
+    location: Optional[str] = None,
+    db: Optional[Session] = None,
+) -> dict[str, Any]:
+    """
+    Update an existing calendar event via Google Calendar API.
+    
+    Args:
+        user: User updating the event
+        event_id: Google Calendar event ID to update
+        summary: Optional new event title
+        start_time: Optional new start time in ISO 8601 format
+        end_time: Optional new end time in ISO 8601 format
+        description: Optional new event description
+        attendees: Optional new list of attendee email addresses
+        location: Optional new event location
+        db: Database session for syncing to vector store
+        
+    Returns:
+        Dict with updated event details
+        
+    Raises:
+        ToolExecutionError: If update fails
+    """
+    try:
+        # Get credentials
+        credentials = _get_google_credentials(user)
+        
+        # Build Calendar service
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        # Fetch current event
+        current_event = service.events().get(
+            calendarId='primary',
+            eventId=event_id
+        ).execute()
+        
+        # Update only provided fields
+        if summary is not None:
+            current_event['summary'] = summary
+        
+        if start_time is not None:
+            current_event['start'] = {
+                'dateTime': start_time,
+                'timeZone': 'America/Denver',
+            }
+        
+        if end_time is not None:
+            current_event['end'] = {
+                'dateTime': end_time,
+                'timeZone': 'America/Denver',
+            }
+        
+        if description is not None:
+            current_event['description'] = description
+        
+        if location is not None:
+            current_event['location'] = location
+        
+        if attendees is not None:
+            current_event['attendees'] = [{'email': email} for email in attendees]
+            current_event['sendUpdates'] = 'all'
+        
+        # Update event
+        result = service.events().update(
+            calendarId='primary',
+            eventId=event_id,
+            body=current_event,
+            sendUpdates='all' if attendees is not None else 'none'
+        ).execute()
+        
+        # Sync to vector store
+        if db:
+            await _sync_calendar_event_to_vector_store(
+                event_id=result.get('id'),
+                user=user,
+                db=db,
+                event_data=result,
+                delete=False,
+            )
+        
+        return {
+            "status": "success",
+            "event_id": result.get('id'),
+            "event_link": result.get('htmlLink'),
+            "summary": result.get('summary'),
+            "start": result.get('start', {}).get('dateTime'),
+            "end": result.get('end', {}).get('dateTime'),
+            "updated_at": result.get('updated'),
+            "event": result,  # Return full event data
+        }
+        
+    except HttpError as e:
+        error_details = e.error_details if hasattr(e, 'error_details') else str(e)
+        raise ToolExecutionError(f"Calendar API error: {error_details}")
+    except Exception as e:
+        raise ToolExecutionError(f"Failed to update event: {str(e)}")
+
+
+async def cancel_event(
+    user: User,
+    event_id: str,
+    send_updates: bool = True,
+    db: Optional[Session] = None,
+) -> dict[str, Any]:
+    """
+    Cancel (delete) a calendar event via Google Calendar API.
+    
+    Args:
+        user: User canceling the event
+        event_id: Google Calendar event ID to cancel
+        send_updates: Whether to send cancellation notifications to attendees
+        db: Database session for removing from vector store
+        
+    Returns:
+        Dict with cancellation status
+        
+    Raises:
+        ToolExecutionError: If cancellation fails
+    """
+    try:
+        # Get credentials
+        credentials = _get_google_credentials(user)
+        
+        # Build Calendar service
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        # Delete event
+        service.events().delete(
+            calendarId='primary',
+            eventId=event_id,
+            sendUpdates='all' if send_updates else 'none'
+        ).execute()
+        
+        logger.info(f"Deleted calendar event {event_id} from Google Calendar")
+        
+        if db:
+            await _sync_calendar_event_to_vector_store(
+                event_id=event_id,
+                user=user,
+                db=db,
+                delete=True,
+            )
+        
+        return {
+            "status": "success",
+            "event_id": event_id,
+            "message": "Event cancelled successfully",
+        }
+        
+    except HttpError as e:
+        error_details = e.error_details if hasattr(e, 'error_details') else str(e)
+        raise ToolExecutionError(f"Calendar API error: {error_details}")
+    except Exception as e:
+        raise ToolExecutionError(f"Failed to cancel event: {str(e)}")
 
 
 async def find_contact(
@@ -279,7 +574,7 @@ async def find_contact(
     Args:
         user: User performing the search
         query: Search query (name, email, or company)
-        limit: Maximum number of results
+        limit: Maximum number of results (must be between 1 and 100)
         
     Returns:
         Dict with list of matching contacts
@@ -289,6 +584,10 @@ async def find_contact(
     """
     if not user.hubspot_oauth_tokens:
         raise ToolExecutionError("HubSpot OAuth tokens not found. Please connect your HubSpot account.")
+    
+    # Validate limit
+    if limit < 1 or limit > 100:
+        raise ToolExecutionError("Limit must be between 1 and 100")
     
     try:
         # Get access token
@@ -372,6 +671,13 @@ async def create_contact(
     phone: Optional[str] = None,
     company: Optional[str] = None,
     notes: Optional[str] = None,
+    job_title: Optional[str] = None,
+    website: Optional[str] = None,
+    city: Optional[str] = None,
+    state: Optional[str] = None,
+    zip_code: Optional[str] = None,
+    country: Optional[str] = None,
+    lifecycle_stage: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Create a new contact in HubSpot CRM.
@@ -383,7 +689,15 @@ async def create_contact(
         last_name: Contact last name
         phone: Contact phone number
         company: Contact company
-        notes: Additional notes
+        notes: Additional notes (will create a note engagement)
+        job_title: Contact job title
+        website: Contact website
+        city: Contact city
+        state: Contact state/region
+        zip_code: Contact postal code
+        country: Contact country
+        lifecycle_stage: Lifecycle stage (subscriber, lead, marketingqualifiedlead, 
+                        salesqualifiedlead, opportunity, customer, evangelist, other)
         
     Returns:
         Dict with created contact details
@@ -413,8 +727,22 @@ async def create_contact(
             properties["phone"] = phone
         if company:
             properties["company"] = company
-        if notes:
-            properties["notes"] = notes
+        if job_title:
+            properties["jobtitle"] = job_title
+        if website:
+            properties["website"] = website
+        if city:
+            properties["city"] = city
+        if state:
+            properties["state"] = state
+        if zip_code:
+            properties["zip"] = zip_code
+        if country:
+            properties["country"] = country
+        if lifecycle_stage:
+            properties["lifecyclestage"] = lifecycle_stage
+        # Note: 'notes' field removed - HubSpot doesn't have a default notes property
+        # Notes should be added as a separate note/engagement if needed
         
         # Create contact via HubSpot API
         async with httpx.AsyncClient() as client:
@@ -443,6 +771,221 @@ async def create_contact(
             
             response.raise_for_status()
             data = response.json()
+            contact_id = data.get("id")
+            
+            props = data.get("properties", {})
+            result = {
+                "status": "success",
+                "contact_id": contact_id,
+                "email": props.get("email"),
+                "first_name": props.get("firstname"),
+                "last_name": props.get("lastname"),
+                "phone": props.get("phone"),
+                "company": props.get("company"),
+                "job_title": props.get("jobtitle"),
+                "website": props.get("website"),
+                "city": props.get("city"),
+                "state": props.get("state"),
+                "zip": props.get("zip"),
+                "country": props.get("country"),
+                "lifecycle_stage": props.get("lifecyclestage"),
+            }
+            
+            # If notes provided, create a note engagement
+            if notes and contact_id:
+                try:
+                    note_result = await create_note(user, contact_id, notes)
+                    result["note_created"] = True
+                    result["note_id"] = note_result.get("note_id")
+                except Exception as note_error:
+                    logger.warning(f"Failed to create note for contact {contact_id}: {note_error}")
+                    result["note_created"] = False
+            
+            return result
+            
+    except httpx.HTTPStatusError as e:
+        raise ToolExecutionError(f"HubSpot API error: {e.response.status_code} - {e.response.text}")
+    except Exception as e:
+        raise ToolExecutionError(f"Failed to create contact: {str(e)}")
+
+
+async def create_note(
+    user: User,
+    contact_id: str,
+    note_body: str,
+) -> dict[str, Any]:
+    """
+    Create a note and associate it with a HubSpot contact.
+    
+    Args:
+        user: User with HubSpot OAuth credentials
+        contact_id: HubSpot contact ID to associate the note with
+        note_body: Text content of the note
+        
+    Returns:
+        Dict with note creation result including note_id and status
+        
+    Raises:
+        ToolExecutionError: If note creation fails
+    """
+    try:
+        # Get HubSpot access token
+        if not user.hubspot_oauth_tokens:
+            raise ToolExecutionError("User is not connected to HubSpot")
+        
+        access_token = user.hubspot_oauth_tokens.get("access_token")
+        if not access_token:
+            raise ToolExecutionError("HubSpot access token not found")
+        
+        # Create note with association to contact
+        async with httpx.AsyncClient() as client:
+            # Create note
+            note_response = await client.post(
+                "https://api.hubapi.com/crm/v3/objects/notes",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "properties": {
+                        "hs_timestamp": datetime.utcnow().isoformat() + "Z",
+                        "hs_note_body": note_body,
+                    },
+                    "associations": [
+                        {
+                            "to": {"id": contact_id},
+                            "types": [
+                                {
+                                    "associationCategory": "HUBSPOT_DEFINED",
+                                    "associationTypeId": 202  # note_to_contact
+                                }
+                            ]
+                        }
+                    ]
+                },
+                timeout=30.0,
+            )
+            
+            note_response.raise_for_status()
+            note_data = note_response.json()
+            
+            logger.info(
+                f"Created note {note_data.get('id')} for contact {contact_id}"
+            )
+            
+            return {
+                "status": "success",
+                "note_id": note_data.get("id"),
+                "contact_id": contact_id,
+                "body": note_body,
+                "timestamp": note_data.get("properties", {}).get("hs_timestamp"),
+            }
+            
+    except httpx.HTTPStatusError as e:
+        raise ToolExecutionError(
+            f"HubSpot API error creating note: {e.response.status_code} - {e.response.text}"
+        )
+    except Exception as e:
+        raise ToolExecutionError(f"Failed to create note: {str(e)}")
+
+
+async def update_contact(
+    user: User,
+    contact_id: str,
+    email: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    phone: Optional[str] = None,
+    company: Optional[str] = None,
+    job_title: Optional[str] = None,
+    website: Optional[str] = None,
+    city: Optional[str] = None,
+    state: Optional[str] = None,
+    zip_code: Optional[str] = None,
+    country: Optional[str] = None,
+    lifecycle_stage: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Update an existing contact in HubSpot CRM.
+    
+    Args:
+        user: User updating the contact
+        contact_id: HubSpot contact ID to update
+        email: Contact email
+        first_name: Contact first name
+        last_name: Contact last name
+        phone: Contact phone number
+        company: Contact company
+        job_title: Contact job title
+        website: Contact website
+        city: Contact city
+        state: Contact state/region
+        zip_code: Contact postal code
+        country: Contact country
+        lifecycle_stage: Lifecycle stage
+        
+    Returns:
+        Dict with updated contact details
+        
+    Raises:
+        ToolExecutionError: If update fails
+    """
+    if not user.hubspot_oauth_tokens:
+        raise ToolExecutionError("HubSpot OAuth tokens not found. Please connect your HubSpot account.")
+    
+    try:
+        # Get access token
+        token_data = json.loads(user.hubspot_oauth_tokens) if isinstance(user.hubspot_oauth_tokens, str) else user.hubspot_oauth_tokens
+        access_token = token_data.get("access_token")
+        
+        if not access_token:
+            raise ToolExecutionError("HubSpot access token not found")
+        
+        # Build properties (only include provided fields)
+        properties: dict[str, str] = {}
+        
+        if email is not None:
+            properties["email"] = email
+        if first_name is not None:
+            properties["firstname"] = first_name
+        if last_name is not None:
+            properties["lastname"] = last_name
+        if phone is not None:
+            properties["phone"] = phone
+        if company is not None:
+            properties["company"] = company
+        if job_title is not None:
+            properties["jobtitle"] = job_title
+        if website is not None:
+            properties["website"] = website
+        if city is not None:
+            properties["city"] = city
+        if state is not None:
+            properties["state"] = state
+        if zip_code is not None:
+            properties["zip"] = zip_code
+        if country is not None:
+            properties["country"] = country
+        if lifecycle_stage is not None:
+            properties["lifecyclestage"] = lifecycle_stage
+        
+        if not properties:
+            raise ToolExecutionError("No fields provided to update")
+        
+        # Update contact via HubSpot API
+        async with httpx.AsyncClient() as client:
+            response = await client.patch(
+                f"https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={"properties": properties},
+                timeout=30.0,
+            )
+            
+            response.raise_for_status()
+            data = response.json()
             
             props = data.get("properties", {})
             return {
@@ -453,12 +996,20 @@ async def create_contact(
                 "last_name": props.get("lastname"),
                 "phone": props.get("phone"),
                 "company": props.get("company"),
+                "job_title": props.get("jobtitle"),
+                "website": props.get("website"),
+                "city": props.get("city"),
+                "state": props.get("state"),
+                "zip": props.get("zip"),
+                "country": props.get("country"),
+                "lifecycle_stage": props.get("lifecyclestage"),
+                "updated_fields": list(properties.keys()),
             }
             
     except httpx.HTTPStatusError as e:
         raise ToolExecutionError(f"HubSpot API error: {e.response.status_code} - {e.response.text}")
     except Exception as e:
-        raise ToolExecutionError(f"Failed to create contact: {str(e)}")
+        raise ToolExecutionError(f"Failed to update contact: {str(e)}")
 
 
 async def create_task(
@@ -508,6 +1059,55 @@ async def create_task(
         raise ToolExecutionError(f"Failed to create task: {str(e)}")
 
 
+async def create_memory_rule(
+    user: User,
+    db: Session,
+    rule_description: str,
+) -> dict[str, Any]:
+    """
+    Create a persistent memory rule that will be evaluated on future events.
+    
+    Args:
+        user: User creating the rule
+        db: Database session
+        rule_description: Natural language description of the rule
+        
+    Returns:
+        Dict with rule creation status
+    """
+    from app.models.memory_rule import MemoryRule
+    
+    try:
+        # Validate input
+        if not rule_description or not rule_description.strip():
+            raise ToolExecutionError("rule_description cannot be empty")
+        
+        # Create the rule with the natural language description
+        # The rule_text will be the same as description for now
+        # A future enhancement could parse this into structured format
+        rule = MemoryRule(
+            user_id=user.id,
+            rule_text=rule_description.strip(),
+            is_active=True,  # Active by default
+        )
+        
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+        
+        return {
+            "status": "success",
+            "message": f"Memory rule created successfully. I will remember to: {rule_description}",
+            "rule_id": rule.id,
+            "rule_text": rule.rule_text,
+            "is_active": rule.is_active,
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise ToolExecutionError(f"Failed to create memory rule: {str(e)}")
+
+
 # Tool execution dispatcher
 async def execute_tool(
     tool_name: str,
@@ -543,12 +1143,34 @@ async def execute_tool(
     elif tool_name == "schedule_event":
         return await schedule_event(
             user=user,
+            db=db,
             summary=arguments.get("summary", ""),
             start_time=arguments.get("start_time", ""),
             end_time=arguments.get("end_time", ""),
             description=arguments.get("description"),
             attendees=arguments.get("attendees"),
             location=arguments.get("location"),
+        )
+    
+    elif tool_name == "update_event":
+        return await update_event(
+            user=user,
+            db=db,
+            event_id=arguments.get("event_id", ""),
+            summary=arguments.get("summary"),
+            start_time=arguments.get("start_time"),
+            end_time=arguments.get("end_time"),
+            description=arguments.get("description"),
+            attendees=arguments.get("attendees"),
+            location=arguments.get("location"),
+        )
+    
+    elif tool_name == "cancel_event":
+        return await cancel_event(
+            user=user,
+            db=db,
+            event_id=arguments.get("event_id", ""),
+            send_updates=arguments.get("send_updates", True),
         )
     
     elif tool_name == "find_contact":
@@ -567,6 +1189,45 @@ async def execute_tool(
             phone=arguments.get("phone"),
             company=arguments.get("company"),
             notes=arguments.get("notes"),
+            job_title=arguments.get("job_title"),
+            website=arguments.get("website"),
+            city=arguments.get("city"),
+            state=arguments.get("state"),
+            zip_code=arguments.get("zip_code"),
+            country=arguments.get("country"),
+            lifecycle_stage=arguments.get("lifecycle_stage"),
+        )
+    
+    elif tool_name == "update_contact":
+        return await update_contact(
+            user=user,
+            contact_id=arguments.get("contact_id", ""),
+            email=arguments.get("email"),
+            first_name=arguments.get("first_name"),
+            last_name=arguments.get("last_name"),
+            phone=arguments.get("phone"),
+            company=arguments.get("company"),
+            job_title=arguments.get("job_title"),
+            website=arguments.get("website"),
+            city=arguments.get("city"),
+            state=arguments.get("state"),
+            zip_code=arguments.get("zip_code"),
+            country=arguments.get("country"),
+            lifecycle_stage=arguments.get("lifecycle_stage"),
+        )
+    
+    elif tool_name == "create_note":
+        return await create_note(
+            user=user,
+            contact_id=arguments.get("contact_id", ""),
+            note_body=arguments.get("note_body", ""),
+        )
+    
+    elif tool_name == "create_memory_rule":
+        return await create_memory_rule(
+            user=user,
+            db=db,
+            rule_description=arguments.get("rule_description", ""),
         )
     
     else:

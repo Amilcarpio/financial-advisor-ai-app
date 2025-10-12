@@ -17,7 +17,7 @@ class EmbeddingService:
     
     def __init__(
         self,
-        model: str = "text-embedding-3-small",
+        model: str | None = None,
         dimensions: int = 1536,
         max_retries: int = 3,
         initial_delay: float = 1.0
@@ -25,12 +25,12 @@ class EmbeddingService:
         """Initialize embedding service.
         
         Args:
-            model: OpenAI embedding model name
+            model: OpenAI embedding model name (defaults to config setting)
             dimensions: Embedding vector dimensions (1536 for text-embedding-3-small)
             max_retries: Maximum number of retry attempts
             initial_delay: Initial delay for exponential backoff (seconds)
         """
-        self.model = model
+        self.model = model or settings.openai_embedding_model
         self.dimensions = dimensions
         self.max_retries = max_retries
         self.initial_delay = initial_delay

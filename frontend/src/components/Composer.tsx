@@ -40,20 +40,21 @@ export default function Composer({ onSend, disabled, placeholder }: ComposerProp
 
   return (
     <div className="border-t border-gray-200 bg-white">
-      <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex items-end space-x-3">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
+        <div className="flex items-end space-x-2 sm:space-x-3">
           {/* Plus button */}
           <button
-            className="flex-shrink-0 w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
-            disabled={disabled}
+            className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={true}
+            title="File upload (coming soon)"
           >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </button>
 
           {/* Input area */}
-          <div className="flex-1 bg-white border border-gray-300 rounded-2xl overflow-hidden">
+          <div className="flex-1 bg-white border border-gray-300 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-transparent transition-shadow">
             <textarea
               ref={textareaRef}
               value={message}
@@ -64,31 +65,43 @@ export default function Composer({ onSend, disabled, placeholder }: ComposerProp
               onKeyDown={handleKeyDown}
               placeholder={placeholder || "Ask anything about your meetings..."}
               disabled={disabled}
-              className="w-full px-4 py-3 text-gray-900 placeholder-gray-400 resize-none focus:outline-none max-h-40 custom-scrollbar"
+              className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base text-gray-900 placeholder-gray-400 resize-none focus:outline-none max-h-32 sm:max-h-40 custom-scrollbar"
               rows={1}
-              style={{ minHeight: '44px' }}
+              style={{ minHeight: '40px' }}
             />
             
             {/* Bottom actions */}
-            <div className="flex items-center justify-between px-4 pb-3">
-              <div className="flex items-center space-x-2">
-                {/* All meetings dropdown */}
-                <button className="flex items-center space-x-1 text-sm text-gray-600 hover:text-gray-900">
+            <div className="flex items-center justify-between px-3 sm:px-4 pb-2 sm:pb-3">
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                {/* All meetings dropdown - Hidden on small mobile */}
+                <button 
+                  disabled={true}
+                  title="Context filter (coming soon)"
+                  className="hidden xs:flex items-center space-x-1 text-xs sm:text-sm text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   <span>All meetings</span>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
 
                 {/* Attachment icons */}
-                <div className="flex items-center space-x-1">
-                  <button className="p-1 text-gray-400 hover:text-gray-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center space-x-0.5 sm:space-x-1">
+                  <button 
+                    disabled={true}
+                    title="Attach file (coming soon)"
+                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                     </svg>
                   </button>
-                  <button className="p-1 text-gray-400 hover:text-gray-600">
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <button 
+                    disabled={true}
+                    title="Record video (coming soon)"
+                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                     </svg>
                   </button>
@@ -96,8 +109,12 @@ export default function Composer({ onSend, disabled, placeholder }: ComposerProp
               </div>
 
               {/* Microphone button */}
-              <button className="p-1 text-gray-400 hover:text-gray-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button 
+                disabled={true}
+                title="Voice input (coming soon)"
+                className="p-1 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
               </button>
@@ -108,16 +125,16 @@ export default function Composer({ onSend, disabled, placeholder }: ComposerProp
           <button
             onClick={handleSend}
             disabled={disabled || !message.trim()}
-            className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-900 flex items-center justify-center hover:bg-gray-800 active:bg-black transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900 shadow-md hover:shadow-lg"
           >
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
             </svg>
           </button>
         </div>
 
         {/* Hint text */}
-        <p className="mt-2 text-xs text-gray-500 text-center">
+        <p className="mt-2 text-xs text-gray-500 text-center hidden sm:block">
           Press Enter to send, Shift + Enter for new line
         </p>
       </div>

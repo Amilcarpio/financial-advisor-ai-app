@@ -1,12 +1,12 @@
 """Database engine and helper utilities."""
 import logging
 from collections.abc import Iterator
-from contextlib import contextmanager
 
-from sqlalchemy import text
+from sqlalchemy import text, create_engine
 from sqlalchemy.exc import ProgrammingError
-from sqlmodel import Session, SQLModel, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.models.base import Base
 from .config import settings
 
 
@@ -50,12 +50,21 @@ def create_db_and_tables() -> None:
             )
             logger.warning("%s (%s)", warning, exc)
 
-    SQLModel.metadata.create_all(engine)
+    Base.metadata.create_all(engine)
 
 
-@contextmanager
+# Create session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
 def get_session() -> Iterator[Session]:
-    """Provide a managed SQLModel session."""
-
-    with Session(engine) as session:
+    """Provide a managed SQLAlchemy session for FastAPI dependency injection."""
+    session = SessionLocal()
+    try:
         yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

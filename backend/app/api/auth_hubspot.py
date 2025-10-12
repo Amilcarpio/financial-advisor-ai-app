@@ -4,10 +4,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Cookie, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
-from sqlmodel import Session, select
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ..core.database import engine
 from ..models.user import User
+from ..services.hubspot_sync import HubSpotSyncService
+from ..services.embedding_pipeline import EmbeddingPipeline
 from ..utils.oauth_helpers import HubSpotOAuthHelper
 from ..utils.security import StateManager, verify_session_token
 from ..core.config import settings
@@ -80,15 +83,17 @@ async def hubspot_oauth_start(
 @router.get("/callback")
 async def hubspot_oauth_callback(
     code: str = Query(..., description="Authorization code from HubSpot"),
-    state: str = Query(..., description="CSRF state token"),
+    state: Optional[str] = Query(None, description="CSRF state token"),
     error: Optional[str] = Query(None, description="Error from OAuth provider"),
+    session: Optional[str] = Cookie(None, description="Session cookie"),
 ) -> RedirectResponse:
     """Handle HubSpot OAuth callback.
     
     Args:
         code: Authorization code from HubSpot
-        state: CSRF state token for validation
+        state: CSRF state token for validation (optional if session cookie present)
         error: Optional error from OAuth provider
+        session: Session cookie containing user session token
         
     Returns:
         Redirect to frontend
@@ -101,22 +106,30 @@ async def hubspot_oauth_callback(
             status_code=status.HTTP_302_FOUND,
         )
     
-    # Verify CSRF state
-    state_data = StateManager.verify_state(state)
-    if state_data is None:
-        logger.warning(f"Invalid or expired state token: {state[:8]}...")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired state token",
-        )
+    # Try to get user_id from state first, fall back to session cookie
+    user_id = None
     
-    # Get user ID from state
-    user_id = state_data.get("user_id")
+    if state:
+        # Verify CSRF state
+        state_data = StateManager.verify_state(state)
+        if state_data is None:
+            logger.warning(f"Invalid or expired state token: {state[:8]}...")
+        else:
+            user_id = state_data.get("user_id")
+    
+    # Fall back to session cookie if state verification failed or no state
+    if user_id is None and session:
+        try:
+            user_id = verify_session_token(session)
+            logger.info(f"Using user_id from session cookie: {user_id}")
+        except HTTPException:
+            pass
+    
     if user_id is None:
-        logger.error("No user_id in state data")
+        logger.error("No valid user_id from state or session")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid state: no user associated",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User authentication required",
         )
     
     try:
@@ -126,8 +139,8 @@ async def hubspot_oauth_callback(
         logger.info(f"Successfully exchanged HubSpot authorization code for user {user_id}")
         
         # Update user with HubSpot tokens
-        with Session(engine) as session:
-            user = session.get(User, user_id)
+        with Session(engine) as db_session:
+            user = db_session.get(User, user_id)
             if user is None:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -136,9 +149,25 @@ async def hubspot_oauth_callback(
             
             user.hubspot_oauth_tokens = token_data
             user.touch()
-            session.add(user)
-            session.commit()
+            db_session.add(user)
+            db_session.commit()
+            db_session.refresh(user)
             logger.info(f"Updated user {user_id} with HubSpot tokens")
+            
+            # Auto-sync HubSpot contacts in background (fire and forget)
+            try:
+                logger.info(f"Starting HubSpot auto-sync for user {user_id}")
+                hubspot_service = HubSpotSyncService(user=user, db=db_session)
+                sync_stats = hubspot_service.sync(max_results=100)
+                logger.info(f"HubSpot sync completed: {sync_stats}")
+                
+                # Generate embeddings for synced contacts
+                embedding_pipeline = EmbeddingPipeline(db=db_session)
+                embedding_stats = embedding_pipeline.process_contacts(user_id=user_id)
+                logger.info(f"HubSpot embeddings generated: {embedding_stats}")
+            except Exception as sync_error:
+                # Don't fail the auth flow if sync fails
+                logger.error(f"HubSpot auto-sync failed (non-fatal): {sync_error}", exc_info=True)
         
         # Redirect to frontend success page
         return RedirectResponse(

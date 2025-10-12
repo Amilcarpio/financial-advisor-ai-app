@@ -4,16 +4,16 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.models.user import User
 from app.services.embedding_pipeline import EmbeddingPipeline
-from app.utils.security import get_current_user
+from app.utils.security import get_current_user_from_cookie
 
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
+router = APIRouter(prefix="/embeddings", tags=["embeddings"])
 
 
 class GenerateEmbeddingsRequest(BaseModel):
@@ -60,7 +60,7 @@ class SearchRequest(BaseModel):
 @router.post("/generate", response_model=GenerateEmbeddingsResponse)
 async def generate_embeddings(
     request: GenerateEmbeddingsRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_session)
 ) -> GenerateEmbeddingsResponse:
     """Generate embeddings for user's ingested data.
@@ -168,7 +168,7 @@ async def generate_embeddings(
 
 @router.get("/stats", response_model=dict[str, Any])
 async def get_embedding_stats(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_session)
 ) -> dict[str, Any]:
     """Get embedding statistics for current user.
@@ -184,23 +184,23 @@ async def get_embedding_stats(
             detail="User ID is required"
         )
     
-    from sqlmodel import select, func
+    from sqlalchemy import select, func
     from app.models.vector_item import VectorItem
     
     # Count total vectors - use * for count since id is string
-    total_vectors = db.exec(
+    total_vectors = db.scalars(
         select(func.count()).select_from(VectorItem)
         .where(VectorItem.user_id == current_user.id)
     ).first() or 0
     
     # Count by source type
-    email_vectors = db.exec(
+    email_vectors = db.scalars(
         select(func.count()).select_from(VectorItem)
         .where(VectorItem.user_id == current_user.id)
         .where(VectorItem.source_type == "email")
     ).first() or 0
     
-    contact_vectors = db.exec(
+    contact_vectors = db.scalars(
         select(func.count()).select_from(VectorItem)
         .where(VectorItem.user_id == current_user.id)
         .where(VectorItem.source_type == "contact")
@@ -217,7 +217,7 @@ async def get_embedding_stats(
 @router.post("/search")
 async def search_vectors(
     request: SearchRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_session)
 ) -> dict[str, Any]:
     """Perform semantic search over user's vector embeddings.
