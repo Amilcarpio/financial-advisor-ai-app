@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Builder
-FROM python:3.13-slim as builder
+FROM python:3.13-slim AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -40,7 +40,6 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 # Copy application code
 COPY --chown=appuser:appuser app ./app
 COPY --chown=appuser:appuser alembic.ini ./
-COPY --chown=appuser:appuser .env.example ./.env.example
 
 # Switch to non-root user
 USER appuser
