@@ -1,7 +1,7 @@
 # fly.toml - Fly.io deployment configuration
 # See https://fly.io/docs/reference/configuration/
 
-app = "financial-advisor-backend"
+app = "financial-advisor-ai-app"
 primary_region = "dfw"  # Dallas - alternative to deprecated mia region
 
 [build]
