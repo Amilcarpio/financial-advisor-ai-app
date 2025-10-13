@@ -38,37 +38,53 @@ class RuleEvaluator:
         """
         Parse rule text into structured format.
         
-        Example: "when hubspot.contact.creation then create_task priority=high"
+        Supports two formats:
+        1. Structured: "when hubspot.contact.creation then create_task priority=high"
+        2. Natural language: "When someone emails me that is not in HubSpot, create a contact"
+        
+        For natural language, the rule is treated as an LLM instruction
+        and will be passed to the LLM for interpretation at runtime.
+        
         Returns: {
-            "trigger": "hubspot.contact.creation",
-            "action": "create_task",
-            "params": {"priority": "high"}
+            "trigger": "event_type" or "*" (for natural language rules),
+            "action": "call_llm" (for natural language),
+            "params": {"instruction": "original rule text"}
         }
         """
-        # Simple regex-based parser (production should use proper parser)
+        # Try structured format first
         pattern = r"when\s+(\S+)\s+then\s+(\S+)(?:\s+(.+))?"
         match = re.match(pattern, rule_text.strip(), re.IGNORECASE)
         
-        if not match:
-            logger.warning(f"Failed to parse rule: {rule_text}")
-            return None
+        if match:
+            # Structured format parsed successfully
+            trigger = match.group(1)
+            action = match.group(2)
+            params_str = match.group(3) or ""
+            
+            # Parse params: key=value key2=value2
+            params = {}
+            if params_str:
+                for param in params_str.split():
+                    if "=" in param:
+                        key, value = param.split("=", 1)
+                        params[key] = value
+            
+            return {
+                "trigger": trigger,
+                "action": action,
+                "params": params
+            }
         
-        trigger = match.group(1)
-        action = match.group(2)
-        params_str = match.group(3) or ""
-        
-        # Parse params: key=value key2=value2
-        params = {}
-        if params_str:
-            for param in params_str.split():
-                if "=" in param:
-                    key, value = param.split("=", 1)
-                    params[key] = value
-        
+        # Natural language format - treat as LLM instruction
+        # These rules match ANY event and delegate decision to LLM
+        logger.info(f"Treating as natural language rule (will use LLM): {rule_text[:50]}...")
         return {
-            "trigger": trigger,
-            "action": action,
-            "params": params
+            "trigger": "*",  # Matches all events
+            "action": "call_llm",
+            "params": {
+                "instruction": rule_text,
+                "rule_type": "natural_language"
+            }
         }
     
     def matches_event(self, rule_trigger: str, event_type: str) -> bool:
@@ -76,9 +92,14 @@ class RuleEvaluator:
         Check if rule trigger matches event type.
         
         Supports wildcards:
+        - "*" matches all events (for natural language rules)
         - "hubspot.*" matches any HubSpot event
         - "gmail.message.*" matches any Gmail message event
         """
+        # Wildcard "*" matches everything
+        if rule_trigger == "*":
+            return True
+        
         # Convert wildcard to regex
         pattern = rule_trigger.replace(".", r"\.").replace("*", ".*")
         return bool(re.match(f"^{pattern}$", event_type, re.IGNORECASE))
@@ -95,6 +116,7 @@ class RuleEvaluator:
         
         Supported actions:
         - create_task: Create a task for the worker
+        - call_llm: Create a task for LLM to process proactively
         - log: Just log the event
         """
         if action == "create_task":
@@ -121,6 +143,36 @@ class RuleEvaluator:
             
             logger.info(
                 f"Created task {task.id} for user {user.id} "
+                f"from rule action: {action}"
+            )
+        
+        elif action == "call_llm":
+            # Create task for LLM to process proactively
+            priority_map = {"high": 3, "medium": 2, "low": 1}
+            priority = priority_map.get(params.get("priority", "medium"), 2)
+            
+            # Get parent task ID if provided
+            parent_task_id = params.get("parent_task_id")
+            
+            task = Task(
+                user_id=user.id,
+                task_type="llm_process_event",
+                parent_task_id=parent_task_id,
+                payload={
+                    "rule_triggered": True,
+                    "event_data": event_data,
+                    "params": params,
+                    "instruction": params.get("instruction", "Review this event and take appropriate action if needed.")
+                },
+                state="pending",
+                priority=priority,
+                max_attempts=3
+            )
+            self.db.add(task)
+            self.db.commit()
+            
+            logger.info(
+                f"Created LLM processing task {task.id} for user {user.id} "
                 f"from rule action: {action}"
             )
         
@@ -190,7 +242,8 @@ async def evaluate_rules_for_event(
     db: Session,
     user: User,
     event_type: str,
-    event_data: Dict[str, Any]
+    event_data: Dict[str, Any],
+    create_fallback_task: bool = True
 ) -> int:
     """
     Convenience function to evaluate rules for an event.
@@ -200,12 +253,60 @@ async def evaluate_rules_for_event(
         user: User who owns the rules
         event_type: Type of event (e.g., "hubspot.contact.creation")
         event_data: Event payload data
+        create_fallback_task: If True and no rules match, create a generic
+                             task for LLM to review proactively
     
     Returns:
-        Number of rules triggered
+        Number of rules triggered (or 1 if fallback task created)
     """
     evaluator = RuleEvaluator(db)
-    return await evaluator.evaluate_rules(user, event_type, event_data)
+    triggered_count = await evaluator.evaluate_rules(user, event_type, event_data)
+    
+    # If no rules were triggered and fallback is enabled, create generic task
+    # This enables proactive agent behavior even without explicit rules
+    if triggered_count == 0 and create_fallback_task:
+        # Only create fallback for certain event types to avoid noise
+        proactive_event_types = [
+            "gmail.message.received",
+            "hubspot.contact.creation",
+            "calendar.event.created",
+        ]
+        
+        # Check if this event type should trigger proactive review
+        should_review = any(
+            event_type.startswith(et) or event_type == et 
+            for et in proactive_event_types
+        )
+        
+        if should_review:
+            logger.info(
+                f"No rules matched for {event_type}, creating fallback task "
+                f"for proactive LLM review"
+            )
+            
+            task = Task(
+                user_id=user.id,
+                task_type="llm_process_event",
+                payload={
+                    "event_type": event_type,
+                    "event_data": event_data,
+                    "instruction": (
+                        "A new event occurred. Please review and take appropriate "
+                        "action if needed."
+                    ),
+                    "fallback_task": True
+                },
+                state="pending",
+                priority=1,  # Lower priority for proactive reviews
+                max_attempts=2  # Fewer retries for optional tasks
+            )
+            db.add(task)
+            db.commit()
+            
+            logger.info(f"Created fallback task {task.id} for event {event_type}")
+            return 1
+    
+    return triggered_count
 
 
 def create_default_rules(db: Session, user: User) -> List[MemoryRule]:

@@ -1,0 +1,94 @@
+services:
+  # Backend FastAPI application (production optimized)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        PYTHON_VERSION: 3.13-slim
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      APP_ENV: production
+      APP_DEBUG: false
+      
+      # Database (use Fly.io Postgres or external service)
+      DATABASE_URL: ${DATABASE_URL}
+      AUTO_CREATE_PGVECTOR_EXTENSION: false
+      
+      # OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+      
+      HUBSPOT_CLIENT_ID: ${HUBSPOT_CLIENT_ID}
+      HUBSPOT_CLIENT_SECRET: ${HUBSPOT_CLIENT_SECRET}
+      HUBSPOT_REDIRECT_URI: ${HUBSPOT_REDIRECT_URI}
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+      
+      # Frontend
+      FRONTEND_URL: ${FRONTEND_URL}
+      
+      # OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+
+  # Background worker (production optimized)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        PYTHON_VERSION: 3.13-slim
+    restart: unless-stopped
+    command: python3 -m app.services.tasks_worker
+    environment:
+      # Application
+      APP_ENV: production
+      APP_DEBUG: false
+      
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      HUBSPOT_CLIENT_ID: ${HUBSPOT_CLIENT_ID}
+      HUBSPOT_CLIENT_SECRET: ${HUBSPOT_CLIENT_SECRET}
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+      
+      # OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      
+      # Worker Configuration
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-10}
+      WORKER_MAX_CONCURRENT: ${WORKER_MAX_CONCURRENT:-5}
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "tasks_worker"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

@@ -302,4 +302,79 @@ class HubSpotOAuthHelper:
         except Exception as e:
             logger.error(f"Failed to refresh HubSpot token: {e}")
             raise ValueError(f"Failed to refresh access token: {e}")
-
+    
+    @staticmethod
+    async def check_token_valid(access_token: str) -> bool:
+        """Check if HubSpot access token is still valid.
+        
+        Makes a lightweight API call to verify token validity.
+        
+        Args:
+            access_token: HubSpot access token to validate
+            
+        Returns:
+            True if token is valid, False if expired or invalid
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                # Use a lightweight endpoint to check token validity
+                # /crm/v3/owners is a simple endpoint that requires authentication
+                response = await client.get(
+                    "https://api.hubapi.com/crm/v3/owners?limit=1",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                    },
+                    timeout=10.0,
+                )
+                
+                # Token is valid if we get a 2xx response
+                if response.status_code == 200:
+                    return True
+                
+                # 401 means token is expired/invalid
+                if response.status_code == 401:
+                    logger.info("HubSpot token validation failed: 401 Unauthorized")
+                    return False
+                
+                # Other errors - log and assume valid to avoid false negatives
+                logger.warning(f"HubSpot token validation returned unexpected status: {response.status_code}")
+                return True
+                
+        except Exception as e:
+            # On network errors or other exceptions, assume valid to avoid false negatives
+            logger.warning(f"HubSpot token validation failed with exception: {e}")
+            return True
+    
+    @staticmethod
+    async def get_portal_id(access_token: str) -> Optional[str]:
+        """Get HubSpot portal (account) ID for the authenticated user.
+        
+        Args:
+            access_token: HubSpot access token
+            
+        Returns:
+            Portal ID as string, or None if unable to retrieve
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                # Get account details which includes portalId
+                response = await client.get(
+                    "https://api.hubapi.com/account-info/v3/details",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                    },
+                    timeout=10.0,
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    portal_id = data.get("portalId")
+                    if portal_id:
+                        return str(portal_id)
+                
+                logger.warning(f"Failed to get HubSpot portal ID: HTTP {response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting HubSpot portal ID: {e}")
+            return None

@@ -32,6 +32,9 @@ class User(Base):
     hubspot_oauth_tokens: Mapped[Dict[str, Any]] = mapped_column(
         JSON, nullable=False, default=dict
     )
+    hubspot_portal_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, index=True
+    )
     google_history_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(

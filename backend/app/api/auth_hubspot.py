@@ -138,6 +138,13 @@ async def hubspot_oauth_callback(
         
         logger.info(f"Successfully exchanged HubSpot authorization code for user {user_id}")
         
+        # Get portal ID from HubSpot
+        portal_id = await HubSpotOAuthHelper.get_portal_id(token_data["access_token"])
+        if portal_id:
+            logger.info(f"Retrieved HubSpot portal ID: {portal_id}")
+        else:
+            logger.warning("Could not retrieve HubSpot portal ID")
+        
         # Update user with HubSpot tokens
         with Session(engine) as db_session:
             user = db_session.get(User, user_id)
@@ -148,11 +155,13 @@ async def hubspot_oauth_callback(
                 )
             
             user.hubspot_oauth_tokens = token_data
+            if portal_id:
+                user.hubspot_portal_id = portal_id
             user.touch()
             db_session.add(user)
             db_session.commit()
             db_session.refresh(user)
-            logger.info(f"Updated user {user_id} with HubSpot tokens")
+            logger.info(f"Updated user {user_id} with HubSpot tokens and portal ID")
             
             # Auto-sync HubSpot contacts in background (fire and forget)
             try:

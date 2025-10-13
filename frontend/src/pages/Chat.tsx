@@ -13,6 +13,7 @@ export default function Chat() {
   const [streamingContent, setStreamingContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'history'>('chat');
+  const [showHubSpotReconnect, setShowHubSpotReconnect] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -88,6 +89,12 @@ export default function Chat() {
           setError('Failed to get response. Please try again.');
           setIsStreaming(false);
           setStreamingContent('');
+        },
+        messages, // Pass conversation history
+        (reconnectMessage) => {
+          // HubSpot reconnect required
+          console.warn('HubSpot reconnect required:', reconnectMessage);
+          setShowHubSpotReconnect(true);
         }
       );
     } catch (err) {
@@ -220,6 +227,42 @@ export default function Chat() {
                 className="w-full sm:w-auto px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-orange-700 bg-white border border-orange-300 rounded-lg hover:bg-orange-50 transition-colors"
               >
                 Connect HubSpot
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HubSpot reconnect banner - show when token expired */}
+      {showHubSpotReconnect && (
+        <div className="bg-red-50 border-b border-red-200 px-3 sm:px-6 py-2 sm:py-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 max-w-4xl mx-auto">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+              <p className="text-xs sm:text-sm text-red-800">
+                <span className="font-medium">HubSpot authentication expired.</span> Please reconnect your HubSpot account to continue using CRM features.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => setShowHubSpotReconnect(false)}
+                className="text-red-600 hover:text-red-800 p-1"
+                title="Dismiss"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <button
+                onClick={() => {
+                  setShowHubSpotReconnect(false);
+                  connectHubSpot();
+                }}
+                className="w-full sm:w-auto px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                Reconnect HubSpot
               </button>
             </div>
           </div>

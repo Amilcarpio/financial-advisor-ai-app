@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from ..models.email import Email
 from ..models.user import User
+from .memory_rules import evaluate_rules_for_event
 
 
 logger = logging.getLogger(__name__)
@@ -200,8 +201,54 @@ class GmailSyncService:
                 **email_data
             )
             self.db.add(new_email)
+            self.db.flush()  # Ensure the email has an ID
             stats["new_emails"] += 1
             logger.debug(f"Created new email {message_id}")
+            
+            # Trigger memory rules for new email
+            try:
+                import asyncio
+                received_at_str = None
+                if email_data.get("received_at"):
+                    received_at_str = email_data["received_at"].isoformat()
+                
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, create a task
+                    asyncio.create_task(evaluate_rules_for_event(
+                        db=self.db,
+                        user=self.user,
+                        event_type="gmail.email_received",
+                        event_data={
+                            "email_id": new_email.id,
+                            "gmail_id": message_id,
+                            "subject": email_data.get("subject"),
+                            "sender": email_data.get("sender_email"),
+                            "sender_name": email_data.get("sender_name"),
+                            "received_at": received_at_str,
+                            "snippet": email_data.get("snippet"),
+                            "labels": email_data.get("labels", [])
+                        }
+                    ))
+                else:
+                    # If no loop, run synchronously
+                    loop.run_until_complete(evaluate_rules_for_event(
+                        db=self.db,
+                        user=self.user,
+                        event_type="gmail.email_received",
+                        event_data={
+                            "email_id": new_email.id,
+                            "gmail_id": message_id,
+                            "subject": email_data.get("subject"),
+                            "sender": email_data.get("sender_email"),
+                            "sender_name": email_data.get("sender_name"),
+                            "received_at": received_at_str,
+                            "snippet": email_data.get("snippet"),
+                            "labels": email_data.get("labels", [])
+                        }
+                    ))
+            except Exception as e:
+                logger.error(f"Error evaluating rules for new email {message_id}: {e}")
     
     def _parse_message(self, message_data: dict[str, Any]) -> dict[str, Any]:
         """Parse Gmail message data into Email model fields.

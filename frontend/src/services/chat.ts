@@ -13,6 +13,7 @@ export interface ChatResponse {
 
 export type StreamCallback = (chunk: string, done: boolean) => void;
 export type ErrorCallback = (error: Error) => void;
+export type HubSpotReconnectCallback = (message: string) => void;
 
 class ChatService {
   private activeEventSource: EventSource | null = null;
@@ -25,7 +26,8 @@ class ChatService {
     conversationId: string | null,
     onChunk: StreamCallback,
     onError?: ErrorCallback,
-    conversationHistory: Message[] = []
+    conversationHistory: Message[] = [],
+    onHubSpotReconnect?: HubSpotReconnectCallback
   ): Promise<void> {
     try {
       const baseUrl = apiClient.getBaseUrl();
@@ -108,8 +110,15 @@ class ChatService {
                   onError(new Error(event.data));
                 }
                 return;
+              } else if (event.type === 'hubspot_reconnect_required') {
+                // HubSpot token expired - notify parent
+                console.warn('HubSpot reconnect required:', event.data);
+                if (onHubSpotReconnect) {
+                  onHubSpotReconnect(event.data);
+                }
+                // Don't return - continue processing the stream
               }
-              // Ignore 'sources' type for now
+              // Ignore 'sources' and 'function_call' types for now
             } catch (err) {
               console.error('Error parsing SSE data:', err);
             }

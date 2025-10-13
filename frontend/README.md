@@ -1,370 +1,737 @@
-# Financial Advisor AI - Frontend
+# Frontend - Financial Advisor AI# Financial Advisor AI - Frontend
 
-React + TypeScript + Vite frontend for the Financial Advisor AI application with a modern, responsive chat interface.
 
-## 🚀 Quick Start
 
-```bash
-# Install dependencies
-npm install
+React-based frontend application providing an intuitive interface for AI-powered financial advisory automation.React + TypeScript + Vite frontend for the Financial Advisor AI application with a modern, responsive chat interface.
 
-# Start development server
-npm run dev
 
-# Build for production
+
+## Overview## 🚀 Quick Start
+
+
+
+The frontend is a modern single-page application built with React and TypeScript, featuring:```bash
+
+- Interactive chat interface with streaming responses# Install dependencies
+
+- Real-time data synchronizationnpm install
+
+- OAuth authentication flow
+
+- Memory rules management# Start development server
+
+- Responsive design for all devicesnpm run dev
+
+
+
+## Technology Stack# Build for production
+
 npm run build
 
-# Preview production build
-npm run preview
-```
+- **React 18**: Modern React with hooks and concurrent features
 
-The app will be available at `http://localhost:5173`
+- **TypeScript**: Type-safe JavaScript# Preview production build
+
+- **Vite**: Next-generation frontend build toolnpm run preview
+
+- **TanStack Query**: Powerful data fetching and caching```
+
+- **Tailwind CSS**: Utility-first CSS framework
+
+- **React Router v6**: Client-side routingThe app will be available at `http://localhost:5173`
+
+- **Lucide React**: Beautiful icon library
 
 ## 📋 Prerequisites
 
+## Project Structure
+
 - Node.js 18+
-- npm or yarn
-- Backend API running at `http://localhost:8000` (or configured via VITE_API_URL)
 
-## 🔧 Configuration
+```- npm or yarn
 
-### Environment Variables
+frontend/- Backend API running at `http://localhost:8000` (or configured via VITE_API_URL)
 
-Create a `.env.local` file in the frontend directory (optional):
+├── src/
 
-```bash
-# API endpoint (defaults to http://localhost:8000)
-VITE_API_URL=http://localhost:8000
+│   ├── components/       # Reusable React components## 🔧 Configuration
 
-# Enable debug mode
-VITE_DEBUG=true
+│   │   ├── AuthGuard.tsx
+
+│   │   ├── ChatInput.tsx### Environment Variables
+
+│   │   ├── ChatMessage.tsx
+
+│   │   └── ...Create a `.env.local` file in the frontend directory (optional):
+
+│   ├── lib/             # Utilities and configurations
+
+│   │   ├── api.ts       # API client```bash
+
+│   │   ├── auth.ts      # Authentication utilities# API endpoint (defaults to http://localhost:8000)
+
+│   │   └── utils.ts     # Helper functionsVITE_API_URL=http://localhost:8000
+
+│   ├── pages/           # Page components
+
+│   │   ├── Chat.tsx# Enable debug mode
+
+│   │   ├── Home.tsxVITE_DEBUG=true
+
+│   │   ├── Login.tsx```
+
+│   │   └── Settings.tsx
+
+│   ├── App.tsx          # Main app componentThe app automatically detects the backend URL, so configuration is only needed for custom setups.
+
+│   ├── main.tsx         # Application entry point
+
+│   └── index.css        # Global styles## ✨ Features
+
+├── public/              # Static assets
+
+├── index.html           # HTML template### Authentication
+
+├── vite.config.ts       # Vite configuration- 🔐 **Google OAuth Integration** - Secure login with Google accounts
+
+├── tailwind.config.js   # Tailwind CSS configuration- 🍪 **Session Management** - httpOnly cookies for security
+
+├── tsconfig.json        # TypeScript configuration- 👤 **User Profile** - Display name and avatar from Google
+
+└── package.json         # Dependencies and scripts- 🔗 **HubSpot Connection** - Optional CRM integration
+
 ```
-
-The app automatically detects the backend URL, so configuration is only needed for custom setups.
-
-## ✨ Features
-
-### Authentication
-- 🔐 **Google OAuth Integration** - Secure login with Google accounts
-- 🍪 **Session Management** - httpOnly cookies for security
-- 👤 **User Profile** - Display name and avatar from Google
-- 🔗 **HubSpot Connection** - Optional CRM integration
 
 ### Chat Interface
-- 💬 **Real-time Streaming** - Live AI responses with typing indicators
+
+## Prerequisites- 💬 **Real-time Streaming** - Live AI responses with typing indicators
+
 - 🤖 **Function Calling** - Visual feedback when AI uses tools
-- 📝 **Example Prompts** - Quick-start suggestions for users
-- 💾 **Chat History** - Save and load previous conversations (coming soon)
-- 📱 **Mobile Responsive** - Works perfectly on all screen sizes
 
-### UI/UX
+- Node.js 18 or higher- 📝 **Example Prompts** - Quick-start suggestions for users
+
+- npm or yarn package manager- 💾 **Chat History** - Save and load previous conversations (coming soon)
+
+- Backend API running (see backend/README.md)- 📱 **Mobile Responsive** - Works perfectly on all screen sizes
+
+
+
+## Environment Configuration### UI/UX
+
 - 🎨 **Modern Design** - Clean, professional interface
-- 🌙 **Smooth Animations** - Hover effects and transitions
+
+Create a `.env` file in the frontend directory:- 🌙 **Smooth Animations** - Hover effects and transitions
+
 - ♿ **Accessibility** - Keyboard navigation and ARIA labels
-- 🎯 **Smart Tooltips** - Helpful hints for disabled features
-- 🔄 **Tab Navigation** - Switch between Chat and History views
 
-### Components
+```env- 🎯 **Smart Tooltips** - Helpful hints for disabled features
+
+VITE_API_URL=http://localhost:8000- 🔄 **Tab Navigation** - Switch between Chat and History views
+
+VITE_APP_NAME=Financial Advisor AI
+
+```### Components
+
 - **ChatWindow** - Message display with streaming support
-- **Composer** - Message input with future file upload support
+
+For production deployment to GitHub Pages:- **Composer** - Message input with future file upload support
+
 - **MessageBubble** - Individual message rendering
-- **NotFound** - Custom 404 page with navigation
-- **AuthCallback** - OAuth redirect handler
 
-## 🏗️ Project Structure
+```env- **NotFound** - Custom 404 page with navigation
 
-```
+VITE_API_URL=https://your-backend-domain.com- **AuthCallback** - OAuth redirect handler
+
+VITE_APP_NAME=Financial Advisor AI
+
+```## 🏗️ Project Structure
+
+
+
+## Installation```
+
 frontend/
-├── src/
-│   ├── components/              # Reusable components
-│   │   ├── ChatWindow.tsx      # Main chat display
+
+```bash├── src/
+
+# Install dependencies│   ├── components/              # Reusable components
+
+npm install│   │   ├── ChatWindow.tsx      # Main chat display
+
 │   │   ├── Composer.tsx        # Message input
-│   │   └── MessageBubble.tsx   # Message rendering
-│   ├── pages/                   # Page components
+
+# Start development server│   │   └── MessageBubble.tsx   # Message rendering
+
+npm run dev│   ├── pages/                   # Page components
+
 │   │   ├── Chat.tsx            # Main chat page
-│   │   ├── Login.tsx           # Login page
-│   │   ├── AuthCallback.tsx    # OAuth callback handler
+
+# Build for production│   │   ├── Login.tsx           # Login page
+
+npm run build│   │   ├── AuthCallback.tsx    # OAuth callback handler
+
 │   │   └── NotFound.tsx        # 404 page
-│   ├── services/                # API clients
-│   │   ├── api.ts              # Base API client
-│   │   ├── auth.ts             # Authentication service
+
+# Preview production build│   ├── services/                # API clients
+
+npm run preview│   │   ├── api.ts              # Base API client
+
+```│   │   ├── auth.ts             # Authentication service
+
 │   │   ├── chat.ts             # Chat service
-│   │   └── history.ts          # History service (localStorage)
+
+## Development│   │   └── history.ts          # History service (localStorage)
+
 │   ├── hooks/                   # Custom React hooks
-│   │   └── useAuth.tsx         # Authentication hook
+
+### Development Server│   │   └── useAuth.tsx         # Authentication hook
+
 │   ├── types/                   # TypeScript types
-│   │   └── index.ts            # Shared type definitions
-│   ├── lib/                     # Utilities
-│   ├── assets/                  # Static assets
+
+```bash│   │   └── index.ts            # Shared type definitions
+
+npm run dev│   ├── lib/                     # Utilities
+
+```│   ├── assets/                  # Static assets
+
 │   ├── App.tsx                  # Root component
-│   ├── main.tsx                 # Entry point
+
+The application will be available at http://localhost:5173│   ├── main.tsx                 # Entry point
+
 │   └── index.css               # Global styles
-├── public/                      # Public assets
+
+### Code Quality├── public/                      # Public assets
+
 ├── index.html                   # HTML template
-├── package.json                 # Dependencies
-├── tsconfig.json               # TypeScript config
-├── vite.config.ts              # Vite config
+
+```bash├── package.json                 # Dependencies
+
+# Run ESLint├── tsconfig.json               # TypeScript config
+
+npm run lint├── vite.config.ts              # Vite config
+
 ├── tailwind.config.js          # Tailwind config
-├── postcss.config.js           # PostCSS config
-├── eslint.config.js            # ESLint config
+
+# Type check├── postcss.config.js           # PostCSS config
+
+npm run type-check├── eslint.config.js            # ESLint config
+
 └── README.md                   # This file
-```
 
-## 🎨 Tech Stack
+# Format code```
 
-- **React 18.3** - Modern React with hooks and concurrent features
+npm run format
+
+```## 🎨 Tech Stack
+
+
+
+### Component Development- **React 18.3** - Modern React with hooks and concurrent features
+
 - **TypeScript 5.6** - Type safety and better DX
-- **Vite 7.1** - Lightning-fast build tool and dev server
-- **Tailwind CSS 3.4** - Utility-first CSS framework
-- **React Router 7.2** - Client-side routing
-- **Axios** - HTTP client for API calls
+
+Components follow these conventions:- **Vite 7.1** - Lightning-fast build tool and dev server
+
+- Functional components with TypeScript- **Tailwind CSS 3.4** - Utility-first CSS framework
+
+- Props interfaces defined at the top- **React Router 7.2** - Client-side routing
+
+- Hooks used for state management- **Axios** - HTTP client for API calls
+
+- TanStack Query for server state
 
 ## 📡 API Integration
 
+Example component:
+
 ### Services
 
-#### Authentication Service (`services/auth.ts`)
 ```typescript
-// Login with Google
-authService.loginWithGoogle()
+
+interface ChatMessageProps {#### Authentication Service (`services/auth.ts`)
+
+  message: string;```typescript
+
+  sender: 'user' | 'assistant';// Login with Google
+
+  timestamp: Date;authService.loginWithGoogle()
+
+}
 
 // Connect HubSpot
-authService.connectHubSpot()
 
-// Get current session
-const user = await authService.getSession()
+export function ChatMessage({ message, sender, timestamp }: ChatMessageProps) {authService.connectHubSpot()
 
-// Logout
-await authService.logout()
+  return (
+
+    <div className={`message ${sender}`}>// Get current session
+
+      <p>{message}</p>const user = await authService.getSession()
+
+      <span>{timestamp.toLocaleString()}</span>
+
+    </div>// Logout
+
+  );await authService.logout()
+
+}```
+
 ```
 
 #### Chat Service (`services/chat.ts`)
-```typescript
-// Stream chat messages
-await chatService.streamMessage(
-  message,
-  conversationId,
-  onChunk,
-  onError
-)
-```
 
-#### History Service (`services/history.ts`)
-```typescript
-// Save conversation
+## API Integration```typescript
+
+// Stream chat messages
+
+The application uses a centralized API client (`src/lib/api.ts`) for all backend communication:await chatService.streamMessage(
+
+  message,
+
+```typescript  conversationId,
+
+import { apiClient } from '@/lib/api';  onChunk,
+
+  onError
+
+// Example usage)
+
+const { data, isLoading, error } = useQuery({```
+
+  queryKey: ['messages'],
+
+  queryFn: () => apiClient.get('/api/chat/messages'),#### History Service (`services/history.ts`)
+
+});```typescript
+
+```// Save conversation
+
 historyService.saveConversation(conversation)
 
+### Authentication Flow
+
 // Get all conversations
-const conversations = historyService.getAllConversations()
 
-// Search conversations
-const results = historyService.searchConversations(query)
-```
+1. User clicks "Login with Google"const conversations = historyService.getAllConversations()
 
-### API Client
+2. Frontend redirects to backend OAuth endpoint
 
-Base client configuration in `services/api.ts`:
+3. Backend handles Google OAuth flow// Search conversations
+
+4. Backend redirects back with JWT tokenconst results = historyService.searchConversations(query)
+
+5. Frontend stores token and redirects to chat```
+
+
+
+## Building for Production### API Client
+
+
+
+### Standard BuildBase client configuration in `services/api.ts`:
+
 - Automatic base URL detection
-- Request/response interceptors
-- Error handling
-- TypeScript types
 
-## 🎯 Key Components
+```bash- Request/response interceptors
 
-### Chat Page (`pages/Chat.tsx`)
+npm run build- Error handling
 
-Main application page with:
+```- TypeScript types
+
+
+
+Output will be in the `dist/` directory.## 🎯 Key Components
+
+
+
+### GitHub Pages Deployment### Chat Page (`pages/Chat.tsx`)
+
+
+
+The application is configured for static deployment to GitHub Pages.Main application page with:
+
 - User authentication check
-- Chat/History tab navigation
+
+#### Configuration- Chat/History tab navigation
+
 - Message list management
-- Streaming response handling
+
+Update `vite.config.ts`:- Streaming response handling
+
 - Error handling and display
 
-### ChatWindow (`components/ChatWindow.tsx`)
+```typescript
 
-Displays messages and example prompts:
-- Scrollable message list
-- Example prompt cards
+export default defineConfig({### ChatWindow (`components/ChatWindow.tsx`)
+
+  base: '/financial-advisor-ai-app/',  // Your repository name
+
+  // ... other configDisplays messages and example prompts:
+
+});- Scrollable message list
+
+```- Example prompt cards
+
 - Empty state with suggestions
-- Auto-scroll to latest message
 
-### Composer (`components/Composer.tsx`)
+Update `package.json`:- Auto-scroll to latest message
 
-Message input component:
-- Text input with auto-resize
-- Send button with loading state
-- Future features (disabled with tooltips):
-  - File uploads
+
+
+```json### Composer (`components/Composer.tsx`)
+
+{
+
+  "scripts": {Message input component:
+
+    "deploy": "npm run build && gh-pages -d dist"- Text input with auto-resize
+
+  }- Send button with loading state
+
+}- Future features (disabled with tooltips):
+
+```  - File uploads
+
   - Voice input
-  - Video messages
 
-### Authentication Hook (`hooks/useAuth.tsx`)
+#### Deploy  - Video messages
 
-Manages authentication state:
+
+
+```bash### Authentication Hook (`hooks/useAuth.tsx`)
+
+# Install gh-pages
+
+npm install --save-dev gh-pagesManages authentication state:
+
 - User session loading
-- Auto-refresh on mount
-- Logout functionality
-- HubSpot connection
+
+# Build and deploy- Auto-refresh on mount
+
+npm run deploy- Logout functionality
+
+```- HubSpot connection
+
 - Global auth state
 
-## 🎨 Styling
+The site will be available at:
 
-### Tailwind CSS
+`https://yourusername.github.io/financial-advisor-ai-app/`## 🎨 Styling
 
-Utility-first approach with:
-- Responsive breakpoints (`sm:`, `md:`, `lg:`, `xl:`)
-- Custom color palette
-- Hover and active states
+
+
+#### GitHub Repository Settings### Tailwind CSS
+
+
+
+1. Go to repository Settings > PagesUtility-first approach with:
+
+2. Set Source to "gh-pages" branch- Responsive breakpoints (`sm:`, `md:`, `lg:`, `xl:`)
+
+3. Save settings- Custom color palette
+
+4. Wait for GitHub Actions to complete- Hover and active states
+
 - Transitions and animations
+
+## Styling
 
 ### Responsive Design
 
+### Tailwind CSS
+
 Mobile-first breakpoints:
-- `sm`: 640px (small tablets)
+
+The application uses Tailwind CSS for styling:- `sm`: 640px (small tablets)
+
 - `md`: 768px (tablets)
-- `lg`: 1024px (desktops)
-- `xl`: 1280px (large desktops)
 
-Example usage:
-```tsx
+```tsx- `lg`: 1024px (desktops)
+
+<button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">- `xl`: 1280px (large desktops)
+
+  Click Me
+
+</button>Example usage:
+
+``````tsx
+
 <div className="px-3 sm:px-6 py-2 sm:py-4">
-  <h1 className="text-lg sm:text-xl">Title</h1>
+
+### Custom Styles  <h1 className="text-lg sm:text-xl">Title</h1>
+
 </div>
-```
 
-## 🧪 Testing
+Global styles are in `src/index.css`. Component-specific styles use Tailwind classes.```
 
-```bash
+
+
+### Responsive Design## 🧪 Testing
+
+
+
+All components are mobile-first responsive:```bash
+
 # Run tests (when implemented)
-npm test
 
-# Run tests in watch mode
-npm run test:watch
+```tsxnpm test
+
+<div className="flex flex-col md:flex-row lg:grid-cols-3">
+
+  {/* Content adapts to screen size */}# Run tests in watch mode
+
+</div>npm run test:watch
+
+```
 
 # Generate coverage report
-npm run test:coverage
+
+## State Managementnpm run test:coverage
+
 ```
+
+### React Query (TanStack Query)
 
 ## 🏗️ Build & Deployment
 
+Server state is managed with React Query:
+
 ### Development Build
 
-```bash
-npm run dev
-```
+```typescript
 
-Features:
-- Hot Module Replacement (HMR)
+const { data, isLoading, error, refetch } = useQuery({```bash
+
+  queryKey: ['contacts'],npm run dev
+
+  queryFn: () => apiClient.get('/api/contacts'),```
+
+  staleTime: 5 * 60 * 1000, // 5 minutes
+
+});Features:
+
+```- Hot Module Replacement (HMR)
+
 - Fast refresh
-- Source maps
+
+### Local State- Source maps
+
 - Dev server on port 5173
+
+Component-level state uses React hooks:
 
 ### Production Build
 
-```bash
-npm run build
-```
+```typescript
 
-Output:
+const [message, setMessage] = useState('');```bash
+
+const [isOpen, setIsOpen] = useState(false);npm run build
+
+``````
+
+
+
+## RoutingOutput:
+
 - Optimized bundle in `dist/`
-- Minified JS and CSS
+
+React Router v6 handles navigation:- Minified JS and CSS
+
 - Asset hashing for cache busting
-- Source maps (optional)
+
+```typescript- Source maps (optional)
+
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
 Current build size: **~336 KB** (gzipped: ~109 KB)
 
-### Preview Production Build
+<BrowserRouter>
 
-```bash
-npm run preview
-```
+  <Routes>### Preview Production Build
 
-Test the production build locally before deployment.
+    <Route path="/" element={<Home />} />
 
-### Deployment Options
+    <Route path="/chat" element={<Chat />} />```bash
 
-#### Static Hosting (Vercel, Netlify, etc.)
+    <Route path="/settings" element={<Settings />} />npm run preview
 
-```bash
+  </Routes>```
+
+</BrowserRouter>
+
+```Test the production build locally before deployment.
+
+
+
+## Testing### Deployment Options
+
+
+
+```bash#### Static Hosting (Vercel, Netlify, etc.)
+
+# Run tests
+
+npm test```bash
+
 # Build
-npm run build
+
+# Run tests with coveragenpm run build
+
+npm run test:coverage
 
 # Deploy dist/ folder to your hosting provider
-```
 
-Configure these settings:
+# Run tests in watch mode```
+
+npm run test:watch
+
+```Configure these settings:
+
 - Build command: `npm run build`
-- Output directory: `dist`
+
+## Performance Optimization- Output directory: `dist`
+
 - Install command: `npm install`
 
-#### Nginx
+- Code splitting with React.lazy()
 
-```nginx
-server {
+- Image optimization#### Nginx
+
+- Lazy loading of components
+
+- Memoization with useMemo and useCallback```nginx
+
+- Virtual scrolling for long listsserver {
+
     listen 80;
-    server_name yourdomain.com;
-    root /path/to/dist;
-    index index.html;
 
-    location / {
-        try_files $uri $uri/ /index.html;
+## Browser Support    server_name yourdomain.com;
+
+    root /path/to/dist;
+
+- Chrome (latest 2 versions)    index index.html;
+
+- Firefox (latest 2 versions)
+
+- Safari (latest 2 versions)    location / {
+
+- Edge (latest 2 versions)        try_files $uri $uri/ /index.html;
+
     }
+
+## Troubleshooting
 
     # API proxy (optional)
-    location /api {
-        proxy_pass http://backend:8000;
-    }
-}
-```
 
-#### Docker
+### Common Issues    location /api {
+
+        proxy_pass http://backend:8000;
+
+**Build fails with TypeScript errors:**    }
+
+```bash}
+
+# Clear node_modules and reinstall```
+
+rm -rf node_modules package-lock.json
+
+npm install#### Docker
+
+```
 
 ```dockerfile
-FROM node:18-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
 
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-```
+**API requests fail:**FROM node:18-alpine AS build
 
-## 🐛 Troubleshooting
+```bashWORKDIR /app
 
-### Common Issues
+# Check VITE_API_URL in .envCOPY package*.json ./
 
-**Backend connection errors**
+# Ensure backend is runningRUN npm ci
+
+# Check browser console for CORS errorsCOPY . .
+
+```RUN npm run build
+
+
+
+**Styles not updating:**FROM nginx:alpine
+
+```bashCOPY --from=build /app/dist /usr/share/nginx/html
+
+# Clear Vite cacheCOPY nginx.conf /etc/nginx/conf.d/default.conf
+
+rm -rf node_modules/.viteEXPOSE 80
+
+npm run devCMD ["nginx", "-g", "daemon off;"]
+
+``````
+
+
+
+**GitHub Pages 404 errors:**## 🐛 Troubleshooting
+
 ```bash
+
+# Ensure base path in vite.config.ts matches repository name### Common Issues
+
+# Check GitHub Pages settings
+
+# Wait for GitHub Actions to complete**Backend connection errors**
+
+``````bash
+
 # Check backend is running
-curl http://localhost:8000/api/health
 
-# Verify CORS settings in backend
-# Check browser console for errors
-```
+## Deployment Checklistcurl http://localhost:8000/api/health
 
-**Build errors**
-```bash
-# Clear node_modules and reinstall
-rm -rf node_modules package-lock.json
+
+
+- [ ] Update `.env` with production API URL# Verify CORS settings in backend
+
+- [ ] Set correct `base` path in `vite.config.ts`# Check browser console for errors
+
+- [ ] Run `npm run build` successfully```
+
+- [ ] Test production build locally with `npm run preview`
+
+- [ ] Configure CORS in backend for production domain**Build errors**
+
+- [ ] Set up GitHub Pages settings```bash
+
+- [ ] Deploy with `npm run deploy`# Clear node_modules and reinstall
+
+- [ ] Verify deployment at GitHub Pages URLrm -rf node_modules package-lock.json
+
 npm install
 
+## Contributing
+
 # Clear Vite cache
-rm -rf node_modules/.vite
-```
 
-**TypeScript errors**
-```bash
-# Check TypeScript version
-npx tsc --version
+1. Follow React and TypeScript best practicesrm -rf node_modules/.vite
 
-# Run type check
+2. Use functional components with hooks```
+
+3. Write self-documenting code with clear prop types
+
+4. Keep components small and focused**TypeScript errors**
+
+5. Use Tailwind CSS for styling```bash
+
+6. Add PropTypes or TypeScript interfaces# Check TypeScript version
+
+7. Test new featuresnpx tsc --version
+
+
+
+## License# Run type check
+
 npm run type-check
-```
+
+Proprietary and confidential. Unauthorized copying or distribution is prohibited.```
+
 
 **Styling issues**
 ```bash

@@ -30,6 +30,9 @@ class Task(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("user.id"), nullable=True, index=True)
+    parent_task_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("task.id"), nullable=True, index=True
+    )
     task_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
     state: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
@@ -46,6 +49,14 @@ class Task(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped[Optional["User"]] = relationship(back_populates="tasks")
+    
+    # Self-referential relationship for task hierarchy
+    parent_task: Mapped[Optional["Task"]] = relationship(
+        "Task", 
+        remote_side=[id],
+        foreign_keys=[parent_task_id],
+        backref="child_tasks"
+    )
 
     __table_args__ = (
         Index("ix_task_scheduled_for", "scheduled_for"),

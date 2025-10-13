@@ -29,7 +29,7 @@ from app.services.openai_prompts import (
     build_system_prompt_with_context,
     validate_function_call,
 )
-from app.services.tools import execute_tool, ToolExecutionError
+from app.services.tools import execute_tool, ToolExecutionError, HubSpotTokenExpiredError
 from app.utils.security import get_current_user_from_cookie
 
 
@@ -469,6 +469,13 @@ async def _stream_chat_response(
                                 "data": f"Invalid function arguments for {tool_call_name}",
                             }
                             yield f"data: {json.dumps(error_event)}\n\n"
+                        except HubSpotTokenExpiredError as e:
+                            # Special handling for expired HubSpot token
+                            reconnect_event = {
+                                "type": "hubspot_reconnect_required",
+                                "data": str(e),
+                            }
+                            yield f"data: {json.dumps(reconnect_event)}\n\n"
                         except Exception as e:
                             error_event = {
                                 "type": "error",
@@ -613,6 +620,13 @@ async def _stream_chat_response(
                                                         "content": json.dumps(tool_result),
                                                     })
                                                     
+                                                except HubSpotTokenExpiredError as e:
+                                                    # Special handling for expired HubSpot token
+                                                    reconnect_event = {
+                                                        "type": "hubspot_reconnect_required",
+                                                        "data": str(e),
+                                                    }
+                                                    yield f"data: {json.dumps(reconnect_event)}\n\n"
                                                 except Exception as e:
                                                     error_event = {
                                                         "type": "error",

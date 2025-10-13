@@ -157,6 +157,13 @@ class ToolExecutionError(Exception):
     pass
 
 
+class HubSpotTokenExpiredError(ToolExecutionError):
+    """Exception raised when HubSpot OAuth token is expired or invalid."""
+    def __init__(self, message: str = "HubSpot authentication expired. Please reconnect your HubSpot account."):
+        self.message = message
+        super().__init__(self.message)
+
+
 def _get_google_credentials(user: User) -> Credentials:
     """
     Build Google OAuth credentials from user tokens.
@@ -693,6 +700,10 @@ async def find_contact(
             }
             
     except httpx.HTTPStatusError as e:
+        # Check if it's an authentication error
+        if e.response.status_code == 401:
+            logger.warning(f"HubSpot token expired for user {user.id}: {e.response.text}")
+            raise HubSpotTokenExpiredError()
         raise ToolExecutionError(f"HubSpot API error: {e.response.status_code} - {e.response.text}")
     except Exception as e:
         raise ToolExecutionError(f"Failed to search contacts: {str(e)}")
@@ -880,6 +891,10 @@ async def create_contact(
             return result
             
     except httpx.HTTPStatusError as e:
+        # Check if it's an authentication error
+        if e.response.status_code == 401:
+            logger.warning(f"HubSpot token expired for user {user.id}: {e.response.text}")
+            raise HubSpotTokenExpiredError()
         raise ToolExecutionError(f"HubSpot API error: {e.response.status_code} - {e.response.text}")
     except Exception as e:
         raise ToolExecutionError(f"Failed to create contact: {str(e)}")
@@ -958,6 +973,10 @@ async def create_note(
             }
             
     except httpx.HTTPStatusError as e:
+        # Check if it's an authentication error
+        if e.response.status_code == 401:
+            logger.warning(f"HubSpot token expired for user {user.id}: {e.response.text}")
+            raise HubSpotTokenExpiredError()
         raise ToolExecutionError(
             f"HubSpot API error creating note: {e.response.status_code} - {e.response.text}"
         )
@@ -1083,6 +1102,10 @@ async def update_contact(
             }
             
     except httpx.HTTPStatusError as e:
+        # Check if it's an authentication error
+        if e.response.status_code == 401:
+            logger.warning(f"HubSpot token expired for user {user.id}: {e.response.text}")
+            raise HubSpotTokenExpiredError()
         raise ToolExecutionError(f"HubSpot API error: {e.response.status_code} - {e.response.text}")
     except Exception as e:
         raise ToolExecutionError(f"Failed to update contact: {str(e)}")

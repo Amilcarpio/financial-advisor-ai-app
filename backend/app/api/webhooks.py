@@ -38,10 +38,14 @@ def verify_hubspot_signature(
     client_secret: str
 ) -> bool:
     """
-    Verify HubSpot webhook signature.
+    Verify HubSpot webhook signature per official documentation.
     
-    HubSpot signs requests with HMAC-SHA256 using the client secret.
-    Format: sha256={hash}
+    HubSpot v3 webhooks signature verification:
+    1. Concatenate client_secret + request_body
+    2. Compute SHA-256 hash
+    3. Compare with signature header (format: "sha256={hash}")
+    
+    Reference: https://developers.hubspot.com/docs/api/webhooks
     """
     if not signature:
         return False
@@ -51,12 +55,11 @@ def verify_hubspot_signature(
     
     expected_signature = signature[7:]  # Remove 'sha256=' prefix
     
-    # Compute HMAC-SHA256
-    computed_signature = hmac.new(
-        client_secret.encode("utf-8"),
-        request_body,
-        hashlib.sha256
-    ).hexdigest()
+    # Concatenate client_secret + request_body (per HubSpot docs)
+    source_string = client_secret.encode("utf-8") + request_body
+    
+    # Compute SHA-256 hash
+    computed_signature = hashlib.sha256(source_string).hexdigest()
     
     return hmac.compare_digest(computed_signature, expected_signature)
 
@@ -85,15 +88,48 @@ async def hubspot_webhook(
     x_hubspot_signature: Optional[str] = Header(None)
 ) -> Dict[str, Any]:
     """
-    Handle HubSpot webhooks.
+    Handle HubSpot v3 webhooks.
     
-    Supports:
-    - contact.creation
-    - contact.propertyChange
-    - contact.deletion
-    - deal.propertyChange
+    Official Documentation: https://developers.hubspot.com/docs/api/webhooks
     
-    Requires signature verification for security.
+    Supported event types:
+    - contact.creation, contact.propertyChange, contact.deletion, contact.merge,
+      contact.associationChange, contact.restore, contact.privacyDeletion
+    - company.*, deal.*, ticket.*, product.*, line_item.*, conversation.*
+    
+    Request Format:
+        POST /webhooks/hubspot
+        Headers:
+            X-HubSpot-Signature: sha256={hash}
+        Body: Array of event objects
+    
+    Signature Verification:
+        Signature = SHA256(client_secret + request_body)
+        Format: "sha256={hex_digest}"
+    
+    Event Object Fields:
+        - eventId: Unique event identifier (not guaranteed unique)
+        - subscriptionId: Which subscription triggered this event
+        - subscriptionType: Event type (e.g., "contact.creation")
+        - portalId: Customer's HubSpot account ID
+        - appId: Application ID
+        - occurredAt: Timestamp in milliseconds since epoch
+        - attemptNumber: Retry attempt number (starts at 0)
+        - objectId: ID of the affected CRM object
+        - changeSource: Source of the change
+        - propertyName: (propertyChange events only)
+        - propertyValue: (propertyChange events only)
+    
+    Retry Behavior:
+        - Up to 10 retry attempts over 24 hours
+        - Retries on: connection failed, timeout (>5s), any 4xx/5xx response
+        - Randomized delays to prevent thundering herd
+    
+    Batching:
+        - Can receive up to 100 events per request
+    
+    Returns:
+        JSON object with processing status
     """
     body_bytes = await request.body()
     
@@ -125,10 +161,16 @@ async def hubspot_webhook(
     processed_count = 0
     
     for event in payload:
-        # Extract event details
+        # Extract event details per HubSpot v3 webhook documentation
+        # Reference: https://developers.hubspot.com/docs/api/webhooks
         event_id = event.get("eventId")
         subscription_type = event.get("subscriptionType")
         object_id = event.get("objectId")
+        portal_id = event.get("portalId")
+        app_id = event.get("appId")
+        occurred_at = event.get("occurredAt")
+        attempt_number = event.get("attemptNumber", 0)
+        change_source = event.get("changeSource")
         
         if not event_id:
             logger.warning("HubSpot webhook event missing eventId, skipping")
@@ -141,29 +183,37 @@ async def hubspot_webhook(
         
         mark_webhook_processed(event_id)
         
-        # Find user by HubSpot portal ID (stored in hubspot_oauth_tokens)
-        # For MVP, we'll just use the first user with HubSpot connected
-        # In production, store portal_id in User model
-        user = db.scalars(
-            select(User).where(User.hubspot_oauth_tokens != None)  # type: ignore
-        ).first()
+        # Find user by HubSpot portal ID (preferred method)
+        user = None
+        if portal_id:
+            user = db.scalars(
+                select(User).where(User.hubspot_portal_id == str(portal_id))
+            ).first()
+        
+        # Fallback: find first user with HubSpot connected (for backward compatibility)
+        if not user:
+            logger.warning(f"No user found with portal_id={portal_id}, using fallback")
+            user = db.scalars(
+                select(User).where(User.hubspot_oauth_tokens != None)  # type: ignore
+            ).first()
         
         if not user:
-            logger.warning(f"No user found with HubSpot connected for event {event_id}")
+            logger.warning(f"No user found for HubSpot webhook event {event_id}")
             continue
         
         logger.info(
             f"Processing HubSpot webhook: eventId={event_id}, "
-            f"type={subscription_type}, objectId={object_id}"
+            f"type={subscription_type}, objectId={object_id}, "
+            f"portalId={portal_id}, attemptNumber={attempt_number}"
         )
         
-        # Evaluate memory rules
+        # Evaluate memory rules with complete event data
         try:
             await evaluate_rules_for_event(
                 db=db,
                 user=user,
                 event_type=f"hubspot.{subscription_type}",
-                event_data=event
+                event_data=event  # Pass complete event with all fields
             )
             processed_count += 1
         except Exception as e:
@@ -183,17 +233,48 @@ async def gmail_webhook(
     db: Session = Depends(get_session)
 ) -> Dict[str, Any]:
     """
-    Handle Gmail Pub/Sub webhook notifications.
+    Handle Gmail Pub/Sub push notifications.
+    
+    Official Documentation: https://developers.google.com/gmail/api/guides/push
     
     Gmail sends notifications when:
     - New email received
     - Email modified
     - Label changed
     
-    Note: Gmail uses Pub/Sub push notifications, which require:
+    Request Format:
+        POST /webhooks/gmail
+        Headers:
+            Content-Type: application/json
+        Body:
+            {
+              "message": {
+                "data": "base64url-encoded-json-string",
+                "messageId": "2070443601311540",
+                "publishTime": "2021-02-26T19:13:55.749Z"
+              },
+              "subscription": "projects/myproject/subscriptions/mysubscription"
+            }
+    
+    Decoded message.data format:
+        {
+          "emailAddress": "user@example.com",
+          "historyId": "9876543210"
+        }
+    
+    Setup Requirements:
     1. Cloud Pub/Sub topic configured
-    2. Push subscription to this endpoint
+    2. Push subscription pointing to this endpoint
     3. OAuth consent for gmail.modify scope
+    4. watch() API call to enable notifications (expires after 7 days)
+    
+    Rate Limits:
+    - Max 1 notification/second per user
+    - Notifications may be delayed or dropped in extreme situations
+    - Implement fallback polling with history.list
+    
+    Returns:
+        JSON object with processing status
     """
     try:
         payload = await request.json()
@@ -201,9 +282,11 @@ async def gmail_webhook(
         logger.error(f"Failed to parse Gmail webhook payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
     
-    # Gmail Pub/Sub format: {"message": {"data": "...", "messageId": "..."}}
+    # Gmail Pub/Sub format: {"message": {"data": "...", "messageId": "...", "publishTime": "..."}}
     message = payload.get("message", {})
     message_id = message.get("messageId")
+    publish_time = message.get("publishTime")
+    subscription = payload.get("subscription")
     
     if not message_id:
         logger.error("Gmail webhook missing messageId")
@@ -216,9 +299,10 @@ async def gmail_webhook(
     
     mark_webhook_processed(message_id)
     
-    # Extract email address from data (base64 encoded)
+    # Extract email address from data (base64url encoded JSON per Google Pub/Sub spec)
     # Format: {"emailAddress": "user@example.com", "historyId": "..."}
     try:
+        # Gmail uses standard base64 encoding (not URL-safe) in practice
         data_bytes = base64.b64decode(message.get("data", ""))
         data = json.loads(data_bytes.decode("utf-8"))
     except Exception as e:
@@ -239,7 +323,11 @@ async def gmail_webhook(
         logger.warning(f"No user found for Gmail webhook: {email_address}")
         return {"status": "ok", "processed": False}
     
-    logger.info(f"Processing Gmail webhook for {email_address}, historyId={history_id}")
+    logger.info(
+        f"Processing Gmail webhook for {email_address}, "
+        f"historyId={history_id}, messageId={message_id}, "
+        f"publishTime={publish_time}"
+    )
     
     # Create task to sync new messages
     task = Task(
@@ -271,17 +359,44 @@ async def calendar_webhook(
     x_goog_resource_state: Optional[str] = Header(None)
 ) -> Dict[str, Any]:
     """
-    Handle Google Calendar webhook notifications.
+    Handle Google Calendar push notifications.
+    
+    Official Documentation: https://developers.google.com/calendar/api/guides/push
     
     Calendar sends notifications when:
     - Event created
     - Event updated
     - Event deleted
     
-    Requires:
+    Request Headers:
+        X-Goog-Channel-ID: UUID identifying the notification channel
+        X-Goog-Channel-Token: Optional verification token
+        X-Goog-Resource-ID: Opaque ID of watched resource
+        X-Goog-Resource-URI: URI of watched resource
+        X-Goog-Resource-State: Current state of resource
+        X-Goog-Message-Number: Sequential message number
+    
+    Resource States:
+        - sync: First notification after watch() setup (no action needed)
+        - exists: Resource exists and has content
+        - not_exists: Resource was deleted
+    
+    Setup Requirements:
     1. Calendar API watch() call to set up push notifications
     2. Verified domain ownership
     3. OAuth consent for calendar scope
+    4. HTTPS endpoint (no localhost in production)
+    
+    Channel Expiration:
+    - Channels expire after specified time or max 1 week
+    - Must renew with watch() before expiration
+    - Stop notifications with stop() method
+    
+    Note: Current implementation syncs all users with Calendar connected.
+          Production should store channel_id -> user_id mapping for efficiency.
+    
+    Returns:
+        JSON object with processing status
     """
     if not x_goog_channel_id or not x_goog_resource_state:
         logger.error("Calendar webhook missing required headers")

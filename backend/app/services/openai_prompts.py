@@ -822,3 +822,85 @@ def _validate_search_calendar(args: dict[str, Any]) -> tuple[bool, str]:
         return False, "Rule description must be at least 10 characters"
     
     return True, ""
+
+
+def build_proactive_agent_prompt(
+    event_type: str,
+    event_data: dict[str, Any],
+    user_context: dict[str, Any],
+) -> str:
+    """
+    Build a prompt for the proactive agent to process an event.
+    
+    This prompt is used when webhooks arrive and the agent needs to
+    decide if any action should be taken.
+    
+    Args:
+        event_type: Type of event (e.g., "gmail.message.received")
+        event_data: Event payload data
+        user_context: Additional context about the user
+        
+    Returns:
+        System prompt for proactive processing
+    """
+    now = datetime.now(timezone.utc)
+    date_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    # Extract user instruction if provided (from memory rules)
+    user_instruction = user_context.get("instruction", "")
+    instruction_section = ""
+    if user_instruction:
+        instruction_section = f"""
+
+CURRENT INSTRUCTION FOR THIS EVENT:
+{user_instruction}
+
+⚠️ IMPORTANT: The user has given you a specific instruction above. Make sure to follow it when processing this event.
+"""
+    
+    # Extract all memory rules for context
+    memory_rules = user_context.get("memory_rules", "")
+    rules_section = ""
+    if memory_rules:
+        rules_section = memory_rules
+    
+    return f"""You are a proactive AI assistant for a financial advisor. An event just occurred and you need to decide if any action should be taken.
+
+CURRENT TIME: {date_str}
+
+EVENT INFORMATION:
+- Type: {event_type}
+- Data: {event_data}
+{instruction_section}{rules_section}
+YOUR TASK:
+1. Review the event data carefully
+2. Check if this event requires any action based on:
+   - Ongoing instructions or memory rules
+   - Common business practices
+   - Urgency or importance of the event
+3. If action is needed, use the appropriate tools to handle it
+4. If no action is needed, respond with a brief explanation
+
+AVAILABLE TOOLS:
+- send_email: Respond to emails or notify people
+- schedule_event: Create calendar events
+- find_contact: Look up contact information
+- create_contact: Add new contacts to HubSpot
+- create_note: Add notes to HubSpot contacts
+- search_emails: Search for related email context
+- search_calendar: Check calendar for conflicts or information
+
+EXAMPLES OF WHEN TO ACT:
+- New email from unknown sender → Check if they should be added to HubSpot
+- Meeting request received → Check calendar and respond with availability
+- Contact created → Send welcome message if appropriate
+- Client asks question in email → Look up information and respond
+
+EXAMPLES OF WHEN NOT TO ACT:
+- Routine system notifications
+- Spam or promotional emails
+- Events that don't require immediate attention
+- Information-only updates
+
+Be helpful but not overly aggressive. Only take action when it clearly benefits the user.
+"""

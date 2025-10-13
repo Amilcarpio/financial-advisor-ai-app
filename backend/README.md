@@ -1,390 +1,777 @@
-# Financial Advisor AI - Backend
+# Backend - Financial Advisor AI# Financial Advisor AI - Backend
 
-FastAPI-based backend with AI chat capabilities, CRM integrations, and vector search.
 
-## Quick Start
 
-### Using Docker (Recommended)
+FastAPI backend service providing AI-powered automation for financial advisors through integration with Gmail, Google Calendar, and HubSpot CRM.FastAPI-based backend with AI chat capabilities, CRM integrations, and vector search.
 
-```bash
-# Copy environment file
-cp .env.example .env
 
-# Edit .env with your API keys and credentials
 
-# Start all services (PostgreSQL + Backend)
+## Overview## Quick Start
+
+
+
+The backend is a modern Python application built with FastAPI, featuring:### Using Docker (Recommended)
+
+- RESTful API endpoints for all client operations
+
+- Background worker for async task processing```bash
+
+- PostgreSQL database with pgvector for vector search# Copy environment file
+
+- OAuth2 authentication with Google and HubSpotcp .env.example .env
+
+- OpenAI integration for LLM capabilities
+
+- Memory rules system for automated event handling# Edit .env with your API keys and credentials
+
+
+
+## Technology Stack# Start all services (PostgreSQL + Backend)
+
 docker-compose up -d
 
-# View logs
-docker-compose logs -f backend
+- **Python 3.13**: Modern Python with type hints
 
-# Stop services
-docker-compose down
-```
+- **FastAPI**: High-performance web framework# View logs
+
+- **PostgreSQL + pgvector**: Vector-enabled databasedocker-compose logs -f backend
+
+- **SQLAlchemy**: ORM for database operations
+
+- **Pydantic**: Data validation and settings management# Stop services
+
+- **OpenAI API**: GPT models for AI capabilitiesdocker-compose down
+
+- **Google APIs**: Gmail and Calendar integration```
+
+- **HubSpot API**: CRM integration
 
 Backend will be available at `http://localhost:8000`
-API documentation at `http://localhost:8000/docs`
 
-### Local Development (Without Docker)
+## Project StructureAPI documentation at `http://localhost:8000/docs`
 
-1. **Install Python 3.13+** and create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
 
-3. **Setup PostgreSQL with pgvector:**
-   ```bash
-   # Install PostgreSQL and pgvector extension
-   # On macOS with Homebrew:
-   brew install postgresql pgvector
-   
-   # Create database
-   createdb financial_advisor
-   ```
+```### Local Development (Without Docker)
 
-4. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
+backend/
 
-5. **Run migrations:**
-   ```bash
-   alembic upgrade head
-   ```
+├── app/1. **Install Python 3.13+** and create a virtual environment:
 
-6. **Start development server:**
-   ```bash
-   uvicorn app.main:app --reload --port 8000
-   ```
+│   ├── api/              # API endpoint definitions   ```bash
+
+│   │   ├── auth_google.py    # Google OAuth flow   python -m venv venv
+
+│   │   ├── auth_hubspot.py   # HubSpot OAuth flow   source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+│   │   ├── chat.py           # Chat/conversation endpoints   ```
+
+│   │   ├── embeddings.py     # Document embedding endpoints
+
+│   │   ├── health.py         # Health check endpoint2. **Install dependencies:**
+
+│   │   ├── ingest.py         # Data ingestion endpoints   ```bash
+
+│   │   ├── rules.py          # Memory rules management   pip install -r requirements.txt
+
+│   │   ├── tools.py          # AI tool execution endpoints   ```
+
+│   │   └── webhooks.py       # External webhook handlers
+
+│   ├── core/             # Core configuration3. **Setup PostgreSQL with pgvector:**
+
+│   │   ├── config.py         # Application settings   ```bash
+
+│   │   ├── database.py       # Database connection   # Install PostgreSQL and pgvector extension
+
+│   │   ├── logging_config.py # Logging configuration   # On macOS with Homebrew:
+
+│   │   ├── rate_limiting.py  # API rate limiting   brew install postgresql pgvector
+
+│   │   └── security.py       # Security utilities   
+
+│   ├── models/           # Database models   # Create database
+
+│   │   ├── contact.py        # HubSpot contact model   createdb financial_advisor
+
+│   │   ├── email.py          # Gmail message model   ```
+
+│   │   ├── memory_rule.py    # Memory rule model
+
+│   │   ├── task.py           # Background task model4. **Configure environment:**
+
+│   │   ├── user.py           # User account model   ```bash
+
+│   │   └── vector_item.py    # Vector embedding model   cp .env.example .env
+
+│   ├── services/         # Business logic   # Edit .env with your credentials
+
+│   │   ├── calendar_sync.py  # Google Calendar sync   ```
+
+│   │   ├── embeddings.py     # Document embedding service
+
+│   │   ├── gmail_sync.py     # Gmail sync service5. **Run migrations:**
+
+│   │   ├── hubspot_sync.py   # HubSpot sync service   ```bash
+
+│   │   ├── memory_rules.py   # Memory rules engine   alembic upgrade head
+
+│   │   ├── openai_prompts.py # LLM prompts and tools   ```
+
+│   │   ├── rag.py            # RAG system
+
+│   │   ├── tasks_worker.py   # Background worker6. **Start development server:**
+
+│   │   └── tools.py          # AI tool implementations   ```bash
+
+│   ├── utils/            # Utility functions   uvicorn app.main:app --reload --port 8000
+
+│   │   ├── chunking.py       # Text chunking utilities   ```
+
+│   │   ├── oauth_helpers.py  # OAuth helper functions
+
+│   │   └── security.py       # Security utilities## Prerequisites
+
+│   ├── migrations/       # Database migrations
+
+│   └── main.py           # Application entry point- Python 3.13+
+
+├── Dockerfile            # Docker image definition- PostgreSQL 14+ with pgvector extension
+
+├── requirements.txt      # Python dependencies- Docker & Docker Compose (for containerized deployment)
+
+└── .env.example          # Environment variables template- OpenAI API key
+
+```- Google OAuth credentials
+
+- HubSpot API credentials (optional)
 
 ## Prerequisites
 
-- Python 3.13+
-- PostgreSQL 14+ with pgvector extension
-- Docker & Docker Compose (for containerized deployment)
-- OpenAI API key
-- Google OAuth credentials
-- HubSpot API credentials (optional)
-
 ## Configuration
 
-### Required Environment Variables
+- Python 3.13+
 
-```bash
-# API Keys
-OPENAI_API_KEY=sk-...
+- PostgreSQL 15+ with pgvector extension### Required Environment Variables
 
-# Google OAuth
+- Docker and Docker Compose (recommended)
+
+- OpenAI API key```bash
+
+- Google Cloud Platform project with OAuth credentials# API Keys
+
+- HubSpot developer account with OAuth appOPENAI_API_KEY=sk-...
+
+
+
+## Environment Configuration# Google OAuth
+
 GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_OAUTH_CLIENT_SECRET=your-secret
+
+Create a `.env` file in the backend directory with the following variables:GOOGLE_OAUTH_CLIENT_SECRET=your-secret
+
 GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
 
-# Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_advisor
+```env
 
-# Security
-SECRET_KEY=your-secret-key-minimum-32-characters
+# Application Settings# Database
+
+APP_NAME=Financial Advisor AIDATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_advisor
+
+APP_ENV=development
+
+APP_DEBUG=true# Security
+
+SECRET_KEY=your-secret-key-minimum-32-characters-requiredSECRET_KEY=your-secret-key-minimum-32-characters
+
 FRONTEND_URL=http://localhost:5173
 
-# Optional: HubSpot Integration
-HUBSPOT_CLIENT_ID=your-hubspot-client-id
-HUBSPOT_CLIENT_SECRET=your-hubspot-secret
-HUBSPOT_REDIRECT_URI=http://localhost:8000/api/auth/hubspot/callback
-```
+# Database
 
-See `.env.example` for all available configuration options.
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_advisor# Optional: HubSpot Integration
+
+VECTOR_DIMENSION=1536HUBSPOT_CLIENT_ID=your-hubspot-client-id
+
+AUTO_CREATE_PGVECTOR_EXTENSION=trueHUBSPOT_CLIENT_SECRET=your-hubspot-secret
+
+HUBSPOT_REDIRECT_URI=http://localhost:8000/api/auth/hubspot/callback
+
+# OpenAI```
+
+OPENAI_API_KEY=sk-your-openai-api-key
+
+OPENAI_CHAT_MODEL=gpt-4o-miniSee `.env.example` for all available configuration options.
+
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 
 ### OAuth Setup
 
-See [OAUTH_SETUP.md](OAUTH_SETUP.md) for detailed instructions on:
-- Creating Google Cloud project
-- Enabling Gmail and Calendar APIs
-- Setting up HubSpot OAuth
-- Configuring redirect URIs
+# Google OAuth
 
-## Database Setup
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.comSee [OAUTH_SETUP.md](OAUTH_SETUP.md) for detailed instructions on:
+
+GOOGLE_CLIENT_SECRET=your-google-client-secret- Creating Google Cloud project
+
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback- Enabling Gmail and Calendar APIs
+
+- Setting up HubSpot OAuth
+
+# HubSpot OAuth- Configuring redirect URIs
+
+HUBSPOT_CLIENT_ID=your-hubspot-client-id
+
+HUBSPOT_CLIENT_SECRET=your-hubspot-client-secret## Database Setup
+
+HUBSPOT_REDIRECT_URI=http://localhost:8000/api/auth/hubspot/callback
 
 The project uses **SQLAlchemy** with **PostgreSQL** and **pgvector** for vector search.
 
-### Migrations with Alembic
+# Frontend URL (for CORS)
+
+FRONTEND_URL=http://localhost:5173### Migrations with Alembic
+
+```
 
 ```bash
-# Generate a new migration after model changes
+
+## Installation# Generate a new migration after model changes
+
 alembic revision --autogenerate -m "description of changes"
 
-# Apply all pending migrations
-alembic upgrade head
+### Option 1: Docker (Recommended)
 
-# Rollback last migration
+# Apply all pending migrations
+
+```bashalembic upgrade head
+
+# Start all services
+
+docker compose up# Rollback last migration
+
 alembic downgrade -1
 
-# View migration history
+# Run migrations
+
+docker compose exec backend alembic upgrade head# View migration history
+
 alembic history
-```
 
-### Database Schema
+# View logs```
 
-Key models:
+docker compose logs -f backend
+
+```### Database Schema
+
+
+
+### Option 2: Local DevelopmentKey models:
+
 - **User** - User accounts with OAuth tokens
-- **Contact** - HubSpot contacts
-- **Email** - Gmail messages with metadata
-- **VectorItem** - Embedded content for semantic search
-- **MemoryRule** - Persistent AI instructions
+
+```bash- **Contact** - HubSpot contacts
+
+# Create virtual environment- **Email** - Gmail messages with metadata
+
+python -m venv venv- **VectorItem** - Embedded content for semantic search
+
+source venv/bin/activate  # On Windows: venv\Scripts\activate- **MemoryRule** - Persistent AI instructions
+
 - **Task** - Asynchronous background tasks
 
-## Background Worker
+# Install dependencies
 
-The application includes a background worker for processing asynchronous tasks.
+pip install -r requirements.txt## Background Worker
 
-### Running the Worker
 
-```bash
-# With Docker (already running in docker-compose)
+
+# Start PostgreSQL (ensure pgvector is installed)The application includes a background worker for processing asynchronous tasks.
+
+# Then run migrations
+
+alembic upgrade head### Running the Worker
+
+
+
+# Start the backend```bash
+
+uvicorn app.main:app --reload --port 8000# With Docker (already running in docker-compose)
+
 docker-compose logs -f worker
 
-# Locally
-python -m app.services.tasks_worker
+# In a separate terminal, start the worker
+
+python -m app.services.tasks_worker# Locally
+
+```python -m app.services.tasks_worker
+
 ```
+
+## Database Migrations
 
 ### Worker Features
 
+The application uses Alembic for database schema management.
+
 - **Polling-based task processing** - Checks for new tasks every 5 seconds
-- **Concurrency control** - Max 10 concurrent tasks using `SELECT FOR UPDATE SKIP LOCKED`
-- **Exponential backoff retry** - Up to 3 attempts with increasing delays
-- **Task types:**
+
+```bash- **Concurrency control** - Max 10 concurrent tasks using `SELECT FOR UPDATE SKIP LOCKED`
+
+# Create a new migration- **Exponential backoff retry** - Up to 3 attempts with increasing delays
+
+alembic revision --autogenerate -m "description"- **Task types:**
+
   - Email sync from Gmail
-  - Calendar event sync
-  - Contact creation/updates
+
+# Apply migrations  - Calendar event sync
+
+alembic upgrade head  - Contact creation/updates
+
   - Embedding generation
-  - HubSpot data sync
+
+# Rollback last migration  - HubSpot data sync
+
+alembic downgrade -1
 
 ### Task Monitoring
 
-```bash
+# View current migration version
+
+alembic current```bash
+
 # Check task status in database
-docker exec -it financial-advisor-db psql -U postgres -d financial_advisor -c "SELECT * FROM task ORDER BY created_at DESC LIMIT 10;"
+
+# View migration historydocker exec -it financial-advisor-db psql -U postgres -d financial_advisor -c "SELECT * FROM task ORDER BY created_at DESC LIMIT 10;"
+
+alembic history```
+
 ```
 
 ## API Endpoints
 
-### Authentication
-- `GET /api/auth/google/start` - Initiate Google OAuth flow
-- `GET /api/auth/google/callback` - Google OAuth callback
-- `GET /api/auth/hubspot/start` - Initiate HubSpot OAuth flow
-- `GET /api/auth/hubspot/callback` - HubSpot OAuth callback
-- `GET /api/auth/me` - Get current user info
-- `POST /api/auth/logout` - Logout user
+## API Endpoints
 
-### Chat
+### Authentication
+
+### Authentication- `GET /api/auth/google/start` - Initiate Google OAuth flow
+
+- `GET /api/auth/google/callback` - Google OAuth callback
+
+- `GET /api/auth/google` - Initiate Google OAuth flow- `GET /api/auth/hubspot/start` - Initiate HubSpot OAuth flow
+
+- `GET /api/auth/google/callback` - Google OAuth callback- `GET /api/auth/hubspot/callback` - HubSpot OAuth callback
+
+- `GET /api/auth/hubspot` - Initiate HubSpot OAuth flow- `GET /api/auth/me` - Get current user info
+
+- `GET /api/auth/hubspot/callback` - HubSpot OAuth callback- `POST /api/auth/logout` - Logout user
+
+- `POST /api/auth/refresh` - Refresh access token
+
+- `POST /api/auth/logout` - Logout user### Chat
+
 - `POST /api/chat/stream` - Stream chat responses with function calling
 
+### Chat & Conversations
+
 ### Memory Rules
-- `GET /api/rules` - List all memory rules
-- `POST /api/rules` - Create new memory rule
+
+- `POST /api/chat/message` - Send a chat message- `GET /api/rules` - List all memory rules
+
+- `POST /api/chat/stream` - Streaming chat endpoint- `POST /api/rules` - Create new memory rule
+
 - `GET /api/rules/{id}` - Get specific rule
-- `PUT /api/rules/{id}` - Update rule
+
+### Data Management- `PUT /api/rules/{id}` - Update rule
+
 - `DELETE /api/rules/{id}` - Delete rule
 
-### Embeddings & RAG
+- `POST /api/ingest/documents` - Ingest and embed documents
+
+- `GET /api/embeddings/search` - Search embedded documents### Embeddings & RAG
+
 - `POST /api/ingest/emails` - Manually trigger email ingestion
-- `POST /api/ingest/contacts` - Manually trigger contact ingestion
+
+### Memory Rules- `POST /api/ingest/contacts` - Manually trigger contact ingestion
+
 - `POST /api/embeddings/search` - Search embedded content
 
-### Health
-- `GET /api/health` - Health check endpoint
-- `GET /docs` - Interactive API documentation (Swagger UI)
+- `GET /api/rules` - List all memory rules
+
+- `POST /api/rules` - Create a new memory rule### Health
+
+- `PUT /api/rules/{rule_id}` - Update a memory rule- `GET /api/health` - Health check endpoint
+
+- `DELETE /api/rules/{rule_id}` - Delete a memory rule- `GET /docs` - Interactive API documentation (Swagger UI)
+
 - `GET /redoc` - Alternative API documentation (ReDoc)
+
+### Webhooks
 
 ## AI Function Tools
 
-The AI can execute these functions during conversation:
+- `POST /api/webhooks/gmail` - Gmail Pub/Sub webhook
+
+- `POST /api/webhooks/calendar` - Google Calendar webhookThe AI can execute these functions during conversation:
+
+- `POST /api/webhooks/hubspot` - HubSpot webhook
 
 ### Search Tools
-- `search_emails` - Semantic search across all emails
+
+### Health & Status- `search_emails` - Semantic search across all emails
+
 - `search_contacts` - Search HubSpot contacts
-- `search_deals` - Search HubSpot deals
-- `search_calendar` - Search calendar events
+
+- `GET /health` - Health check endpoint- `search_deals` - Search HubSpot deals
+
+- `GET /docs` - Swagger UI documentation- `search_calendar` - Search calendar events
+
+- `GET /redoc` - ReDoc documentation
 
 ### CRM Tools
-- `get_contact_by_id` - Get detailed contact info
+
+## Background Worker- `get_contact_by_id` - Get detailed contact info
+
 - `update_contact` - Update contact properties
-- `create_note` - Add note to contact
+
+The background worker processes asynchronous tasks:- `create_note` - Add note to contact
+
 - `get_contact_notes` - Retrieve contact notes
 
-### Memory Tools
-- `create_memory_rule` - Create persistent AI instruction
+```bash
+
+# Start worker (in development)### Memory Tools
+
+python -m app.services.tasks_worker- `create_memory_rule` - Create persistent AI instruction
+
 - `list_memory_rules` - View all memory rules
 
-All tools are defined in `app/services/tools.py` with OpenAI function calling schema.
+# Worker handles:
 
-## Vector Search (RAG)
+- Email synchronization from GmailAll tools are defined in `app/services/tools.py` with OpenAI function calling schema.
 
-The system uses **pgvector** for semantic search:
+- Calendar event synchronization
+
+- LLM-based event processing## Vector Search (RAG)
+
+- Memory rule evaluation
+
+- Document embedding generationThe system uses **pgvector** for semantic search:
+
+```
 
 1. **Embedding Generation**
-   - All emails and contacts are embedded using OpenAI `text-embedding-3-small`
+
+## OAuth Setup   - All emails and contacts are embedded using OpenAI `text-embedding-3-small`
+
    - Embeddings stored in `vectoritem` table
-   - Automatic chunking for long content
 
-2. **Retrieval**
-   - Cosine similarity search
-   - Configurable top-k results
-   - Metadata filtering by user and type
+### Google Cloud Platform   - Automatic chunking for long content
 
-3. **Augmented Generation**
-   - Retrieved context injected into AI prompts
-   - Source citations in responses
-   - Relevance scoring
 
-Implementation in `app/services/rag.py`
+
+1. Create a project in Google Cloud Console2. **Retrieval**
+
+2. Enable Gmail API and Google Calendar API   - Cosine similarity search
+
+3. Create OAuth 2.0 credentials   - Configurable top-k results
+
+4. Add authorized redirect URIs:   - Metadata filtering by user and type
+
+   - Development: `http://localhost:8000/api/auth/google/callback`
+
+   - Production: `https://your-domain.com/api/auth/google/callback`3. **Augmented Generation**
+
+5. Configure OAuth consent screen   - Retrieved context injected into AI prompts
+
+6. Add required scopes:   - Source citations in responses
+
+   - `https://www.googleapis.com/auth/gmail.modify`   - Relevance scoring
+
+   - `https://www.googleapis.com/auth/calendar`
+
+   - `https://www.googleapis.com/auth/userinfo.email`Implementation in `app/services/rag.py`
+
+   - `https://www.googleapis.com/auth/userinfo.profile`
 
 ## Security Features
 
+### HubSpot
+
 - **OAuth 2.0** with PKCE for secure authentication
-- **httpOnly cookies** for session management
-- **Refresh token rotation** every 7 days
-- **Rate limiting** - 100 requests/minute per IP
-- **PII redaction** in logs (emails, names, tokens)
-- **SQL injection protection** via SQLAlchemy ORM
-- **CORS** - Configured for frontend origin
-- **Input validation** using Pydantic models
 
-## Logging & Observability
+1. Create a HubSpot developer account- **httpOnly cookies** for session management
 
-- **Structured JSON logging** for production
+2. Create a new app- **Refresh token rotation** every 7 days
+
+3. Configure OAuth settings- **Rate limiting** - 100 requests/minute per IP
+
+4. Add scopes:- **PII redaction** in logs (emails, names, tokens)
+
+   - `crm.objects.contacts.read`- **SQL injection protection** via SQLAlchemy ORM
+
+   - `crm.objects.contacts.write`- **CORS** - Configured for frontend origin
+
+   - `crm.objects.deals.read`- **Input validation** using Pydantic models
+
+   - `crm.objects.deals.write`
+
+5. Add redirect URI: `http://localhost:8000/api/auth/hubspot/callback`## Logging & Observability
+
+
+
+Detailed instructions: See `OAUTH_SETUP.md`- **Structured JSON logging** for production
+
 - **Request tracing** with correlation IDs
-- **PII redaction filter** automatically removes sensitive data
+
+## Testing- **PII redaction filter** automatically removes sensitive data
+
 - **Performance metrics** for database queries
-- **Error tracking** with full stack traces
 
-Configure log level via `LOG_LEVEL` environment variable.
+```bash- **Error tracking** with full stack traces
 
-## Testing
+# Run tests
+
+pytestConfigure log level via `LOG_LEVEL` environment variable.
+
+
+
+# Run with coverage## Testing
+
+pytest --cov=app
 
 ```bash
-# Run all tests
-pytest
 
-# Run with coverage
-pytest --cov=app --cov-report=html
+# Run specific test file# Run all tests
+
+pytest tests/test_api.pypytest
+
+
+
+# Run with verbose output# Run with coverage
+
+pytest -vpytest --cov=app --cov-report=html
+
+```
 
 # Run specific test file
-pytest tests/test_chat.py
 
-# Run with verbose output
+## Production Deploymentpytest tests/test_chat.py
+
+
+
+### Docker Build# Run with verbose output
+
 pytest -v
-```
 
-## 🐛 Troubleshooting
+```bash```
 
-### Database Connection Issues
+# Build production image
 
-```bash
+docker build -t financial-advisor-backend:latest .## 🐛 Troubleshooting
+
+
+
+# Run container### Database Connection Issues
+
+docker run -p 8000:8000 --env-file .env financial-advisor-backend:latest
+
+``````bash
+
 # Check PostgreSQL is running
-docker-compose ps db
 
-# View database logs
-docker-compose logs db
+### Fly.io Deploymentdocker-compose ps db
+
+
+
+```bash# View database logs
+
+# Install Fly CLIdocker-compose logs db
+
+curl -L https://fly.io/install.sh | sh
 
 # Connect to database
-docker exec -it financial-advisor-db psql -U postgres -d financial_advisor
+
+# Login to Fly.iodocker exec -it financial-advisor-db psql -U postgres -d financial_advisor
+
+fly auth login
 
 # Reset database
-docker-compose down -v
-docker-compose up -d
+
+# Create appdocker-compose down -v
+
+fly apps create financial-advisor-backenddocker-compose up -d
+
 alembic upgrade head
-```
 
-### OAuth Errors
+# Set secrets```
 
-- Verify redirect URIs match exactly in Google Cloud Console
+fly secrets set OPENAI_API_KEY=sk-...
+
+fly secrets set GOOGLE_CLIENT_SECRET=...### OAuth Errors
+
+fly secrets set HUBSPOT_CLIENT_SECRET=...
+
+fly secrets set SECRET_KEY=...- Verify redirect URIs match exactly in Google Cloud Console
+
 - Check OAuth credentials in `.env`
-- Ensure APIs are enabled (Gmail, Calendar, People)
-- Clear browser cookies and try again
 
-### Import Errors
+# Deploy- Ensure APIs are enabled (Gmail, Calendar, People)
 
-```bash
+fly deploy- Clear browser cookies and try again
+
+
+
+# View logs### Import Errors
+
+fly logs
+
+``````bash
+
 # Verify Python version
-python --version  # Should be 3.13+
 
-# Reinstall dependencies
-pip install -r requirements.txt --upgrade
+## Performance Optimizationpython --version  # Should be 3.13+
 
-# Check virtual environment is activated
-which python
+
+
+- Database connection pooling configured for production# Reinstall dependencies
+
+- Background worker separates heavy operations from API requestspip install -r requirements.txt --upgrade
+
+- Vector search optimized with pgvector indexes
+
+- Redis caching for frequently accessed data (optional)# Check virtual environment is activated
+
+- Rate limiting prevents API abusewhich python
+
 ```
+
+## Security Best Practices
 
 ### Worker Not Processing Tasks
 
-```bash
-# Check worker logs
-docker-compose logs worker
+- Never commit `.env` file to version control
 
-# Manually check tasks table
-docker exec -it financial-advisor-db psql -U postgres -d financial_advisor -c "SELECT status, COUNT(*) FROM task GROUP BY status;"
+- Use strong SECRET_KEY (minimum 32 characters)```bash
 
-# Restart worker
+- Rotate OAuth credentials regularly# Check worker logs
+
+- Keep dependencies updateddocker-compose logs worker
+
+- Enable CORS only for trusted origins
+
+- Use HTTPS in production# Manually check tasks table
+
+- Implement rate limiting on all endpointsdocker exec -it financial-advisor-db psql -U postgres -d financial_advisor -c "SELECT status, COUNT(*) FROM task GROUP BY status;"
+
+
+
+## Monitoring# Restart worker
+
 docker-compose restart worker
-```
 
-## 📚 Project Structure
+- Health check endpoint at `/health````
 
-```
+- Structured logging with correlation IDs
+
+- Error tracking with stack traces## 📚 Project Structure
+
+- Performance metrics collection
+
+- Database query logging (development only)```
+
 backend/
-├── app/
+
+## Troubleshooting├── app/
+
 │   ├── api/                    # API route handlers
-│   │   ├── auth_google.py     # Google OAuth
+
+### Common Issues│   │   ├── auth_google.py     # Google OAuth
+
 │   │   ├── auth_hubspot.py    # HubSpot OAuth
-│   │   ├── chat.py            # Chat streaming
-│   │   ├── rules.py           # Memory rules
-│   │   ├── embeddings.py      # Vector search
-│   │   └── ...
+
+**Database connection fails:**│   │   ├── chat.py            # Chat streaming
+
+```bash│   │   ├── rules.py           # Memory rules
+
+# Check PostgreSQL is running│   │   ├── embeddings.py      # Vector search
+
+docker compose ps db│   │   └── ...
+
 │   ├── core/                  # Core configuration
-│   │   ├── config.py          # Settings and environment
-│   │   ├── database.py        # Database connection
-│   │   ├── security.py        # Security utilities
+
+# Verify DATABASE_URL is correct│   │   ├── config.py          # Settings and environment
+
+echo $DATABASE_URL│   │   ├── database.py        # Database connection
+
+```│   │   ├── security.py        # Security utilities
+
 │   │   ├── observability.py   # Logging setup
-│   │   └── rate_limiting.py   # Rate limiter
-│   ├── models/                # SQLAlchemy models
-│   │   ├── base.py           # Base model class
-│   │   ├── user.py           # User model
-│   │   ├── contact.py        # Contact model
-│   │   ├── email.py          # Email model
-│   │   ├── vector_item.py    # Embedding model
+
+**OAuth redirect fails:**│   │   └── rate_limiting.py   # Rate limiter
+
+```bash│   ├── models/                # SQLAlchemy models
+
+# Ensure redirect URI matches exactly in:│   │   ├── base.py           # Base model class
+
+# 1. .env file│   │   ├── user.py           # User model
+
+# 2. Google Cloud Console│   │   ├── contact.py        # Contact model
+
+# 3. HubSpot app settings│   │   ├── email.py          # Email model
+
+```│   │   ├── vector_item.py    # Embedding model
+
 │   │   ├── memory_rule.py    # Memory rule model
-│   │   └── task.py           # Background task model
-│   ├── services/              # Business logic
-│   │   ├── tools.py          # AI function tools
-│   │   ├── rag.py            # Vector search/RAG
+
+**Worker not processing tasks:**│   │   └── task.py           # Background task model
+
+```bash│   ├── services/              # Business logic
+
+# Check worker logs│   │   ├── tools.py          # AI function tools
+
+docker compose logs -f worker│   │   ├── rag.py            # Vector search/RAG
+
 │   │   ├── openai_prompts.py # AI prompt templates
-│   │   ├── gmail_sync.py     # Gmail integration
-│   │   ├── calendar_sync.py  # Calendar integration
+
+# Verify DATABASE_URL and OPENAI_API_KEY│   │   ├── gmail_sync.py     # Gmail integration
+
+```│   │   ├── calendar_sync.py  # Calendar integration
+
 │   │   ├── hubspot_sync.py   # HubSpot integration
-│   │   ├── embeddings.py     # Embedding generation
-│   │   ├── embedding_pipeline.py  # Batch embedding
-│   │   ├── memory_rules.py   # Memory rule logic
-│   │   └── tasks_worker.py   # Background worker
-│   ├── utils/                 # Utilities
+
+**pgvector extension not found:**│   │   ├── embeddings.py     # Embedding generation
+
+```bash│   │   ├── embedding_pipeline.py  # Batch embedding
+
+# Install extension manually│   │   ├── memory_rules.py   # Memory rule logic
+
+docker compose exec db psql -U postgres -d financial_advisor -c "CREATE EXTENSION vector;"│   │   └── tasks_worker.py   # Background worker
+
+```│   ├── utils/                 # Utilities
+
 │   │   ├── oauth_helpers.py  # OAuth utilities
-│   │   ├── security.py       # Security helpers
+
+## Contributing│   │   ├── security.py       # Security helpers
+
 │   │   └── chunking.py       # Text chunking
-│   └── main.py               # FastAPI application
-├── migrations/                # Alembic migrations
-│   └── versions/             # Migration scripts
-├── tests/                    # Test files
-├── .env.example             # Environment template
+
+1. Follow PEP 8 style guide│   └── main.py               # FastAPI application
+
+2. Add type hints to all functions├── migrations/                # Alembic migrations
+
+3. Write docstrings for public APIs│   └── versions/             # Migration scripts
+
+4. Add tests for new features├── tests/                    # Test files
+
+5. Update documentation├── .env.example             # Environment template
+
 ├── alembic.ini              # Alembic configuration
-├── docker-compose.yml       # Docker services
+
+## License├── docker-compose.yml       # Docker services
+
 ├── Dockerfile               # Backend container
-├── requirements.txt         # Python dependencies
+
+Proprietary and confidential. Unauthorized copying or distribution is prohibited.├── requirements.txt         # Python dependencies
+
 ├── OAUTH_SETUP.md          # OAuth setup guide
 └── README.md               # This file
 ```

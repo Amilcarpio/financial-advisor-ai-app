@@ -13,7 +13,7 @@ from ..models.user import User
 from ..services.gmail_sync import GmailSyncService
 from ..services.calendar_sync import CalendarSyncService
 from ..services.embedding_pipeline import EmbeddingPipeline
-from ..utils.oauth_helpers import GoogleOAuthHelper
+from ..utils.oauth_helpers import GoogleOAuthHelper, HubSpotOAuthHelper
 from ..utils.security import StateManager, create_session_token, get_current_user_optional
 from ..core.config import settings
 
@@ -255,6 +255,7 @@ async def get_current_user_info(current_user: Optional[User] = Depends(get_curre
     """Get current authenticated user information.
     
     Returns user info if authenticated, null if not.
+    Checks if HubSpot token is valid if present.
     
     Args:
         current_user: Current authenticated user from session (optional)
@@ -270,6 +271,23 @@ async def get_current_user_info(current_user: Optional[User] = Depends(get_curre
     if current_user.google_oauth_tokens:
         picture = current_user.google_oauth_tokens.get("picture")
     
+    # Check if HubSpot token is valid
+    hubspot_connected = False
+    if current_user.hubspot_oauth_tokens:
+        try:
+            access_token = current_user.hubspot_oauth_tokens.get("access_token")
+            if access_token:
+                # Validate token with HubSpot API
+                hubspot_connected = await HubSpotOAuthHelper.check_token_valid(access_token)
+                if not hubspot_connected:
+                    logger.info(f"HubSpot token validation failed for user {current_user.id}")
+            else:
+                logger.warning(f"User {current_user.id} has hubspot_oauth_tokens but no access_token")
+        except Exception as e:
+            logger.error(f"Error checking HubSpot token validity for user {current_user.id}: {e}")
+            # On error, assume not connected to be safe
+            hubspot_connected = False
+    
     return {
         "user": {
             "id": current_user.id,
@@ -279,7 +297,7 @@ async def get_current_user_info(current_user: Optional[User] = Depends(get_curre
             "is_active": current_user.is_active,
             "created_at": current_user.created_at,
             "updated_at": current_user.updated_at,
-            "hubspot_connected": current_user.hubspot_oauth_tokens is not None,
+            "hubspot_connected": hubspot_connected,
         }
     }
 

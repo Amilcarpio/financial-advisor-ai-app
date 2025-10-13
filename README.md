@@ -1,227 +1,451 @@
-# Financial Advisor AI App
+# Financial Advisor AI Application# Financial Advisor AI App
 
-An intelligent CRM assistant powered by AI that helps financial advisors manage clients, emails, meetings, and tasks through natural conversation.
 
-## Features
 
-### Core Capabilities
+An intelligent financial advisory platform that leverages artificial intelligence to provide proactive assistance through automated email management, calendar coordination, and CRM integration.An intelligent CRM assistant powered by AI that helps financial advisors manage clients, emails, meetings, and tasks through natural conversation.
+
+
+
+## Overview## Features
+
+
+
+This application combines a FastAPI backend with a React frontend to deliver an AI-powered assistant for financial advisors. The system automatically syncs with Gmail, Google Calendar, and HubSpot CRM, using large language models to intelligently process events and execute appropriate actions based on configurable memory rules.### Core Capabilities
+
 - **AI-Powered Chat Interface** - Natural language interaction with your CRM data
-- **Google OAuth Integration** - Secure authentication with Google accounts
-- **HubSpot CRM Integration** - Full integration with HubSpot contacts, deals, and notes
-- **Email & Calendar Sync** - Automatic sync of Gmail emails and Google Calendar events
-- **Intelligent RAG (Retrieval-Augmented Generation)** - Context-aware responses using vector embeddings
-- **Memory Rules** - Create persistent AI memory rules for personalized interactions
-- **Task Management** - Create and track tasks with natural language
-- **Real-time Streaming** - Live streaming responses for better UX
 
-### Technical Features
-- **Responsive Design** - Mobile-first UI that works on all devices
+### Key Features- **Google OAuth Integration** - Secure authentication with Google accounts
+
+- **HubSpot CRM Integration** - Full integration with HubSpot contacts, deals, and notes
+
+- **AI-Powered Automation**: Intelligent event processing using OpenAI's language models- **Email & Calendar Sync** - Automatic sync of Gmail emails and Google Calendar events
+
+- **Email Management**: Automatic Gmail synchronization and processing- **Intelligent RAG (Retrieval-Augmented Generation)** - Context-aware responses using vector embeddings
+
+- **Calendar Integration**: Google Calendar event tracking and attendee notification- **Memory Rules** - Create persistent AI memory rules for personalized interactions
+
+- **CRM Synchronization**: Bidirectional HubSpot contact and deal management- **Task Management** - Create and track tasks with natural language
+
+- **Memory Rules**: User-defined automation rules in natural language- **Real-time Streaming** - Live streaming responses for better UX
+
+- **RAG System**: Context-aware responses using vector similarity search
+
+- **Real-time Updates**: WebSocket support for live notifications### Technical Features
+
+- **OAuth2 Security**: Secure authentication with Google and HubSpot- **Responsive Design** - Mobile-first UI that works on all devices
+
 - **Vector Search** - pgvector-powered semantic search across emails and CRM data
-- **Background Processing** - Async task processing for email/calendar sync
+
+## Architecture- **Background Processing** - Async task processing for email/calendar sync
+
 - **Rate Limiting** - Built-in API rate limiting and security features
-- **OAuth 2.0** - Secure token management with refresh token rotation
+
+### Technology Stack- **OAuth 2.0** - Secure token management with refresh token rotation
+
 - **Observability** - Comprehensive logging and error tracking
 
-## Architecture
+**Backend:**
 
-### Backend
-- **FastAPI** - Modern Python web framework
-- **PostgreSQL + pgvector** - Relational database with vector search
-- **SQLAlchemy** - ORM for database operations
+- Python 3.13## Architecture
+
+- FastAPI web framework
+
+- PostgreSQL database with pgvector extension### Backend
+
+- SQLAlchemy ORM- **FastAPI** - Modern Python web framework
+
+- OpenAI API for LLM capabilities- **PostgreSQL + pgvector** - Relational database with vector search
+
+- OAuth2 authentication- **SQLAlchemy** - ORM for database operations
+
 - **OpenAI API** - GPT-4 for conversational AI
-- **Docker** - Containerized deployment
 
-### Frontend
-- **React 18** - Modern React with hooks
-- **TypeScript** - Type-safe JavaScript
-- **Vite** - Fast build tool and dev server
+**Frontend:**- **Docker** - Containerized deployment
+
+- React 18 with TypeScript
+
+- Vite build tool### Frontend
+
+- TanStack Query for data fetching- **React 18** - Modern React with hooks
+
+- Tailwind CSS for styling- **TypeScript** - Type-safe JavaScript
+
+- Lucide React for icons- **Vite** - Fast build tool and dev server
+
 - **Tailwind CSS** - Utility-first CSS framework
-- **React Router v6** - Client-side routing
 
-## Prerequisites
+### System Components- **React Router v6** - Client-side routing
 
-- **Docker & Docker Compose** - For running PostgreSQL and backend
-- **Node.js 18+** - For frontend development
-- **Python 3.13+** - For backend development (if running locally)
-- **Google Cloud Project** - For OAuth and Gmail/Calendar APIs
-- **HubSpot Account** - For CRM integration (optional)
-- **OpenAI API Key** - For AI capabilities
 
-## Quick Start
 
-### 1. Clone the Repository
+```## Prerequisites
 
-```bash
-git clone https://github.com/Amilcarpio/financial-advisor-ai-app.git
-cd financial-advisor-ai-app
-```
+├── backend/          # FastAPI application
 
-### 2. Backend Setup
+│   ├── app/- **Docker & Docker Compose** - For running PostgreSQL and backend
 
-```bash
-cd backend
+│   │   ├── api/      # REST API endpoints- **Node.js 18+** - For frontend development
 
-# Copy environment file
-cp .env.example .env
+│   │   ├── core/     # Configuration and database- **Python 3.13+** - For backend development (if running locally)
+
+│   │   ├── models/   # Database models- **Google Cloud Project** - For OAuth and Gmail/Calendar APIs
+
+│   │   ├── services/ # Business logic- **HubSpot Account** - For CRM integration (optional)
+
+│   │   └── utils/    # Helper functions- **OpenAI API Key** - For AI capabilities
+
+│   └── Dockerfile
+
+├── frontend/         # React application## Quick Start
+
+│   ├── src/
+
+│   │   ├── components/  # React components### 1. Clone the Repository
+
+│   │   ├── lib/         # Utilities and API client
+
+│   │   └── pages/       # Page components```bash
+
+│   └── Dockerfilegit clone https://github.com/Amilcarpio/financial-advisor-ai-app.git
+
+└── docker-compose.yml   # Development environmentcd financial-advisor-ai-app
+
+``````
+
+
+
+## Prerequisites### 2. Backend Setup
+
+
+
+- Docker and Docker Compose```bash
+
+- OpenAI API keycd backend
+
+- Google Cloud Platform account (for Gmail and Calendar APIs)
+
+- HubSpot developer account# Copy environment file
+
+- Node.js 18+ (for local frontend development)cp .env.example .env
+
+- Python 3.13+ (for local backend development)
 
 # Edit .env with your credentials:
-# - OPENAI_API_KEY
+
+## Quick Start# - OPENAI_API_KEY
+
 # - GOOGLE_OAUTH_CLIENT_ID
-# - GOOGLE_OAUTH_CLIENT_SECRET
+
+### 1. Clone the Repository# - GOOGLE_OAUTH_CLIENT_SECRET
+
 # - HUBSPOT_CLIENT_ID (optional)
-# - HUBSPOT_CLIENT_SECRET (optional)
 
-# Start services with Docker
-docker-compose up -d
+```bash# - HUBSPOT_CLIENT_SECRET (optional)
 
-# Check logs
+git clone https://github.com/yourusername/financial-advisor-ai-app.git
+
+cd financial-advisor-ai-app# Start services with Docker
+
+```docker-compose up -d
+
+
+
+### 2. Configure Environment Variables# Check logs
+
 docker-compose logs -f backend
+
+Create a `.env` file in the `backend` directory:```
+
+
+
+```bashBackend will be available at `http://localhost:8000`
+
+cd backend
+
+cp .env.example .env### 3. Frontend Setup
+
 ```
-
-Backend will be available at `http://localhost:8000`
-
-### 3. Frontend Setup
 
 ```bash
-cd frontend
 
-# Install dependencies
-npm install
+Edit `.env` with your credentials:cd frontend
 
-# Start development server
-npm run dev
-```
 
-Frontend will be available at `http://localhost:5173`
+
+```env# Install dependencies
+
+# Applicationnpm install
+
+APP_NAME=Financial Advisor AI
+
+APP_ENV=development# Start development server
+
+APP_DEBUG=truenpm run dev
+
+SECRET_KEY=your-secret-key-min-32-characters```
+
+
+
+# DatabaseFrontend will be available at `http://localhost:5173`
+
+DATABASE_URL=postgresql://postgres:postgres@db:5432/financial_advisor
 
 ### 4. OAuth Setup
 
-Follow the detailed instructions in [`backend/OAUTH_SETUP.md`](backend/OAUTH_SETUP.md) to configure:
-- Google OAuth credentials
-- Gmail API access
+# OpenAI
+
+OPENAI_API_KEY=your-openai-api-keyFollow the detailed instructions in [`backend/OAUTH_SETUP.md`](backend/OAUTH_SETUP.md) to configure:
+
+OPENAI_CHAT_MODEL=gpt-4o-mini- Google OAuth credentials
+
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small- Gmail API access
+
 - Google Calendar API access
-- HubSpot OAuth credentials (optional)
 
-## Project Structure
+# Google OAuth- HubSpot OAuth credentials (optional)
+
+GOOGLE_CLIENT_ID=your-google-client-id
+
+GOOGLE_CLIENT_SECRET=your-google-client-secret## Project Structure
+
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
 
 ```
-financial-advisor-ai-app/
-├── backend/                      # FastAPI backend
-│   ├── app/
-│   │   ├── api/                 # API route handlers
+
+# HubSpot OAuthfinancial-advisor-ai-app/
+
+HUBSPOT_CLIENT_ID=your-hubspot-client-id├── backend/                      # FastAPI backend
+
+HUBSPOT_CLIENT_SECRET=your-hubspot-client-secret│   ├── app/
+
+HUBSPOT_REDIRECT_URI=http://localhost:8000/api/auth/hubspot/callback│   │   ├── api/                 # API route handlers
+
 │   │   │   ├── auth_google.py   # Google OAuth
-│   │   │   ├── auth_hubspot.py  # HubSpot OAuth
-│   │   │   ├── chat.py          # Chat streaming endpoint
-│   │   │   ├── rules.py         # Memory rules
+
+# Frontend│   │   │   ├── auth_hubspot.py  # HubSpot OAuth
+
+FRONTEND_URL=http://localhost:5173│   │   │   ├── chat.py          # Chat streaming endpoint
+
+```│   │   │   ├── rules.py         # Memory rules
+
 │   │   │   └── ...
-│   │   ├── core/                # Core configuration
+
+### 3. Start the Application│   │   ├── core/                # Core configuration
+
 │   │   │   ├── config.py        # Settings
-│   │   │   ├── database.py      # Database setup
-│   │   │   ├── security.py      # Security utilities
-│   │   │   └── ...
+
+```bash│   │   │   ├── database.py      # Database setup
+
+docker compose up│   │   │   ├── security.py      # Security utilities
+
+```│   │   │   └── ...
+
 │   │   ├── models/              # SQLAlchemy models
-│   │   │   ├── user.py
-│   │   │   ├── contact.py
-│   │   │   ├── email.py
-│   │   │   └── ...
+
+The application will be available at:│   │   │   ├── user.py
+
+- Frontend: http://localhost:5173│   │   │   ├── contact.py
+
+- Backend API: http://localhost:8000│   │   │   ├── email.py
+
+- API Documentation: http://localhost:8000/docs│   │   │   └── ...
+
 │   │   ├── services/            # Business logic
-│   │   │   ├── tools.py         # AI function tools
+
+### 4. OAuth Setup│   │   │   ├── tools.py         # AI function tools
+
 │   │   │   ├── rag.py           # Vector search
-│   │   │   ├── gmail_sync.py    # Gmail integration
-│   │   │   ├── calendar_sync.py # Calendar integration
-│   │   │   ├── hubspot_sync.py  # HubSpot integration
+
+Detailed OAuth configuration instructions can be found in:│   │   │   ├── gmail_sync.py    # Gmail integration
+
+- Backend: `backend/OAUTH_SETUP.md`│   │   │   ├── calendar_sync.py # Calendar integration
+
+- Frontend: `frontend/README.md`│   │   │   ├── hubspot_sync.py  # HubSpot integration
+
 │   │   │   └── ...
-│   │   └── utils/               # Utility functions
+
+## Development│   │   └── utils/               # Utility functions
+
 │   ├── migrations/              # Alembic migrations
-│   ├── docker-compose.yml       # Docker services
+
+### Backend Development│   ├── docker-compose.yml       # Docker services
+
 │   ├── Dockerfile              # Backend container
-│   ├── requirements.txt        # Python dependencies
-│   └── README.md               # Backend documentation
-│
-├── frontend/                    # React frontend
-│   ├── src/
+
+See `backend/README.md` for detailed backend development instructions, including:│   ├── requirements.txt        # Python dependencies
+
+- Local development setup│   └── README.md               # Backend documentation
+
+- Database migrations│
+
+- API endpoint documentation├── frontend/                    # React frontend
+
+- Testing procedures│   ├── src/
+
 │   │   ├── components/         # React components
-│   │   │   ├── ChatWindow.tsx
+
+### Frontend Development│   │   │   ├── ChatWindow.tsx
+
 │   │   │   ├── Composer.tsx
-│   │   │   └── MessageBubble.tsx
-│   │   ├── pages/              # Page components
-│   │   │   ├── Chat.tsx
-│   │   │   ├── Login.tsx
-│   │   │   ├── AuthCallback.tsx
+
+See `frontend/README.md` for detailed frontend development instructions, including:│   │   │   └── MessageBubble.tsx
+
+- Component architecture│   │   ├── pages/              # Page components
+
+- State management│   │   │   ├── Chat.tsx
+
+- Build configuration│   │   │   ├── Login.tsx
+
+- Deployment procedures│   │   │   ├── AuthCallback.tsx
+
 │   │   │   └── NotFound.tsx
-│   │   ├── services/           # API clients
+
+## Production Deployment│   │   ├── services/           # API clients
+
 │   │   │   ├── api.ts
-│   │   │   ├── auth.ts
+
+### Backend Deployment (Fly.io)│   │   │   ├── auth.ts
+
 │   │   │   ├── chat.ts
-│   │   │   └── history.ts
+
+The backend is configured for deployment to Fly.io:│   │   │   └── history.ts
+
 │   │   ├── hooks/              # Custom hooks
-│   │   │   └── useAuth.tsx
-│   │   ├── types/              # TypeScript types
-│   │   └── App.tsx
-│   ├── package.json
+
+```bash│   │   │   └── useAuth.tsx
+
+cd backend│   │   ├── types/              # TypeScript types
+
+fly deploy│   │   └── App.tsx
+
+```│   ├── package.json
+
 │   ├── vite.config.ts
-│   ├── tailwind.config.js
+
+See `backend/README.md` for complete deployment instructions.│   ├── tailwind.config.js
+
 │   └── README.md               # Frontend documentation
-│
+
+### Frontend Deployment (GitHub Pages)│
+
 └── README.md                    # This file
-```
 
-## 🔧 Configuration
+The frontend is configured for static deployment to GitHub Pages:```
 
-### Environment Variables
 
-#### Backend (.env)
+
+```bash## 🔧 Configuration
+
+cd frontend
+
+npm run build### Environment Variables
+
+npm run deploy
+
+```#### Backend (.env)
+
 ```bash
-# API Keys
+
+See `frontend/README.md` for complete deployment instructions.# API Keys
+
 OPENAI_API_KEY=sk-...
 
-# Google OAuth
-GOOGLE_OAUTH_CLIENT_ID=...
-GOOGLE_OAUTH_CLIENT_SECRET=...
-GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
+## API Documentation
 
-# HubSpot OAuth (optional)
+# Google OAuth
+
+Interactive API documentation is available at `/docs` when running the backend:GOOGLE_OAUTH_CLIENT_ID=...
+
+- Swagger UI: http://localhost:8000/docsGOOGLE_OAUTH_CLIENT_SECRET=...
+
+- ReDoc: http://localhost:8000/redocGOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
+
+
+
+## Database Schema# HubSpot OAuth (optional)
+
 HUBSPOT_CLIENT_ID=...
-HUBSPOT_CLIENT_SECRET=...
+
+The application uses PostgreSQL with the pgvector extension for vector similarity search. Key tables include:HUBSPOT_CLIENT_SECRET=...
+
 HUBSPOT_REDIRECT_URI=http://localhost:8000/api/auth/hubspot/callback
 
-# Database
-DATABASE_URL=postgresql://postgres:postgres@db:5432/financial_advisor
+- `user`: User accounts and OAuth tokens
 
-# Security
-SECRET_KEY=your-secret-key-here
+- `email`: Gmail messages# Database
+
+- `contact`: HubSpot contactsDATABASE_URL=postgresql://postgres:postgres@db:5432/financial_advisor
+
+- `memoryrule`: User-defined automation rules
+
+- `task`: Background job queue# Security
+
+- `vector_item`: Embedded documents for RAGSECRET_KEY=your-secret-key-here
+
 FRONTEND_URL=http://localhost:5173
 
+## Background Workers
+
 # Optional
-LOG_LEVEL=INFO
-ENVIRONMENT=development
-```
 
-## Key Features Explained
+The system includes a background worker for processing asynchronous tasks:LOG_LEVEL=INFO
 
-### 1. AI Chat with Function Calling
+- Email synchronizationENVIRONMENT=development
+
+- Calendar event processing```
+
+- LLM-based event analysis
+
+- Memory rule evaluation## Key Features Explained
+
+
+
+## Security Considerations### 1. AI Chat with Function Calling
+
 The AI can execute real actions in your CRM:
-- Search contacts and emails
-- Update contact information
-- Create notes and tasks
-- Query calendar events
-- Search HubSpot deals
 
-### 2. Vector Search (RAG)
+- All sensitive credentials must be stored in environment variables- Search contacts and emails
+
+- OAuth2 is used for all third-party integrations- Update contact information
+
+- JWT tokens for session management- Create notes and tasks
+
+- CORS protection configured for production- Query calendar events
+
+- Rate limiting on API endpoints- Search HubSpot deals
+
+
+
+## Contributing### 2. Vector Search (RAG)
+
 All emails and CRM data are embedded and searchable:
-- Semantic search across all your data
-- Context-aware AI responses
-- Automatic relevance ranking
 
-### 3. Memory Rules
+Contributions are welcome. Please ensure:- Semantic search across all your data
+
+- Code follows existing style conventions- Context-aware AI responses
+
+- All tests pass- Automatic relevance ranking
+
+- Documentation is updated
+
+- Environment variables are not hardcoded### 3. Memory Rules
+
 Create persistent instructions for the AI:
-```
-When someone mentions baseball, search for clients who play baseball
-Always check calendar before scheduling meetings
-Prioritize contacts with recent activity
-```
 
-### 4. OAuth Integration
+## License```
+
+When someone mentions baseball, search for clients who play baseball
+
+Proprietary and confidential. Unauthorized copying or distribution is prohibited.Always check calendar before scheduling meetings
+
+Prioritize contacts with recent activity
+
+## Support```
+
+
+
+For issues or questions, please open an issue in the GitHub repository.### 4. OAuth Integration
+
 Secure authentication flow:
 1. User logs in with Google
 2. Grants access to Gmail and Calendar
