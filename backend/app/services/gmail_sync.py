@@ -212,12 +212,13 @@ class GmailSyncService:
                 if email_data.get("received_at"):
                     received_at_str = email_data["received_at"].isoformat()
                 
+                user_id = self.user.id
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # If loop is running, create a task
                     asyncio.create_task(evaluate_rules_for_event(
                         db=self.db,
-                        user=self.user,
+                        user=user_id,  # Pass user_id instead of user object
                         event_type="gmail.email_received",
                         event_data={
                             "email_id": new_email.id,
@@ -234,7 +235,7 @@ class GmailSyncService:
                     # If no loop, run synchronously
                     loop.run_until_complete(evaluate_rules_for_event(
                         db=self.db,
-                        user=self.user,
+                        user=user_id,  # Pass user_id instead of user object
                         event_type="gmail.email_received",
                         event_data={
                             "email_id": new_email.id,

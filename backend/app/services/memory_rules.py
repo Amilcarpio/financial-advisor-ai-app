@@ -240,7 +240,7 @@ class RuleEvaluator:
 
 async def evaluate_rules_for_event(
     db: Session,
-    user: User,
+    user: User | int,  # Accept either User object or user_id
     event_type: str,
     event_data: Dict[str, Any],
     create_fallback_task: bool = True
@@ -250,7 +250,7 @@ async def evaluate_rules_for_event(
     
     Args:
         db: Database session
-        user: User who owns the rules
+        user: User who owns the rules (User object or user_id)
         event_type: Type of event (e.g., "hubspot.contact.creation")
         event_data: Event payload data
         create_fallback_task: If True and no rules match, create a generic
@@ -259,6 +259,14 @@ async def evaluate_rules_for_event(
     Returns:
         Number of rules triggered (or 1 if fallback task created)
     """
+    # If user_id passed, fetch the user
+    if isinstance(user, int):
+        fetched_user = db.get(User, user)
+        if not fetched_user:
+            logger.warning(f"User {user} not found for rule evaluation")
+            return 0
+        user = fetched_user
+    
     evaluator = RuleEvaluator(db)
     triggered_count = await evaluator.evaluate_rules(user, event_type, event_data)
     
