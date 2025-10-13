@@ -1,7 +1,7 @@
 """Google authentication endpoints."""
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
@@ -300,6 +300,77 @@ async def get_current_user_info(current_user: Optional[User] = Depends(get_curre
             "hubspot_connected": hubspot_connected,
         }
     }
+
+
+@auth_router.post("/setup-push-notifications")
+async def setup_push_notifications(
+    current_user: User = Depends(get_current_user_optional)
+) -> dict[str, Any]:
+    """
+    Set up push notifications for Gmail and Calendar.
+    
+    This endpoint should be called after successful OAuth to enable real-time updates.
+    Push notifications expire after 7 days and need to be renewed.
+    
+    Requires:
+        - GOOGLE_PUBSUB_TOPIC: Pub/Sub topic for Gmail (projects/{project}/topics/{topic})
+        - WEBHOOK_BASE_URL: Base URL for Calendar webhooks (https://your-domain.com)
+    
+    Returns:
+        Dict with setup status for Gmail and Calendar
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    if not current_user.google_oauth_tokens:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+    
+    results = {
+        "gmail": {"enabled": False, "error": None},
+        "calendar": {"enabled": False, "error": None}
+    }
+    
+    with Session(engine) as session:
+        user = session.get(User, current_user.id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Setup Gmail push notifications
+        if settings.google_pubsub_topic:
+            try:
+                gmail_service = GmailSyncService(user=user, db=session)
+                gmail_response = gmail_service.setup_push_notifications(
+                    topic_name=settings.google_pubsub_topic
+                )
+                results["gmail"]["enabled"] = True
+                results["gmail"]["historyId"] = gmail_response.get("historyId")
+                results["gmail"]["expiration"] = gmail_response.get("expiration")
+            except Exception as e:
+                logger.error(f"Failed to setup Gmail push notifications: {e}")
+                results["gmail"]["error"] = str(e)
+        else:
+            results["gmail"]["error"] = "GOOGLE_PUBSUB_TOPIC not configured"
+        
+        # Setup Calendar push notifications
+        if settings.webhook_base_url:
+            try:
+                calendar_service = CalendarSyncService(user=user, db=session)
+                webhook_url = f"{settings.webhook_base_url}/api/webhooks/calendar"
+                calendar_response = calendar_service.setup_push_notifications(
+                    webhook_url=webhook_url
+                )
+                results["calendar"]["enabled"] = True
+                results["calendar"]["channelId"] = calendar_response.get("id")
+                results["calendar"]["resourceId"] = calendar_response.get("resourceId")
+                results["calendar"]["expiration"] = calendar_response.get("expiration")
+            except Exception as e:
+                logger.error(f"Failed to setup Calendar push notifications: {e}")
+                results["calendar"]["error"] = str(e)
+        else:
+            results["calendar"]["error"] = "WEBHOOK_BASE_URL not configured"
+    
+    return results
+
 
 @auth_router.post("/logout")
 async def logout(response: Response):

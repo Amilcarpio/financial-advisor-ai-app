@@ -482,3 +482,91 @@ class CalendarSyncService:
         
         # This should not be reached, but just in case
         raise HttpError(resp={"status": 429}, content=b"Max retries exceeded")
+    
+    def setup_push_notifications(
+        self,
+        webhook_url: str,
+        calendar_id: str = "primary",
+        ttl: int = 604800  # 7 days in seconds
+    ) -> dict[str, Any]:
+        """
+        Set up Calendar push notifications via watch().
+        
+        Calls Calendar API watch() to enable push notifications. Notifications expire
+        after specified TTL (max 1 week).
+        
+        Args:
+            webhook_url: HTTPS URL to receive notifications
+            calendar_id: Calendar ID to watch (default: 'primary')
+            ttl: Time to live in seconds (max 604800 = 7 days)
+        
+        Returns:
+            Dict with watch response:
+                - id: Channel ID (UUID)
+                - resourceId: Opaque ID of watched resource
+                - resourceUri: URI of watched resource
+                - expiration: Unix timestamp (milliseconds) when watch expires
+        
+        Raises:
+            HttpError: If watch() call fails
+        
+        Documentation: https://developers.google.com/calendar/api/guides/push
+        """
+        import uuid
+        
+        try:
+            channel_id = str(uuid.uuid4())
+            
+            watch_request = {
+                "id": channel_id,
+                "type": "web_hook",
+                "address": webhook_url,
+                "expiration": int((time.time() + ttl) * 1000)  # Milliseconds
+            }
+            
+            response = self.service.events().watch(
+                calendarId=calendar_id,
+                body=watch_request
+            ).execute()
+            
+            logger.info(
+                f"Calendar push notifications enabled for user {self.user.id}: "
+                f"channelId={response.get('id')}, "
+                f"resourceId={response.get('resourceId')}, "
+                f"expiration={response.get('expiration')}"
+            )
+            
+            return response
+            
+        except HttpError as e:
+            logger.error(f"Failed to setup Calendar push notifications: {e}")
+            raise
+    
+    def stop_push_notifications(
+        self,
+        channel_id: str,
+        resource_id: str
+    ) -> None:
+        """
+        Stop Calendar push notifications.
+        
+        Calls Calendar API stop() to disable push notifications for a specific channel.
+        
+        Args:
+            channel_id: Channel ID from watch() response
+            resource_id: Resource ID from watch() response
+        """
+        try:
+            stop_request = {
+                "id": channel_id,
+                "resourceId": resource_id
+            }
+            
+            self.service.channels().stop(body=stop_request).execute()
+            logger.info(
+                f"Calendar push notifications stopped for user {self.user.id}: "
+                f"channelId={channel_id}"
+            )
+        except HttpError as e:
+            logger.error(f"Failed to stop Calendar push notifications: {e}")
+            raise

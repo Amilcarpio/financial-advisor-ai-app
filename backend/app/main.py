@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api import auth_google, auth_hubspot, ingest, embeddings, chat, webhooks, health, rules
+from app.api import auth_google, auth_hubspot, ingest, embeddings, chat, webhooks, health, rules, verification
 from app.core.config import settings
 from app.core.database import engine, create_db_and_tables
 from app.core.security import SecurityHeadersMiddleware, setup_security_logging
@@ -86,6 +86,7 @@ setup_metrics(app)
 
 # Mount API routers
 app.include_router(health.router)  # Health checks first
+app.include_router(verification.router)  # Domain verification (no prefix - root level)
 app.include_router(auth_google.auth_router, prefix="/api", tags=["auth"])
 app.include_router(auth_google.router, prefix="/api", tags=["auth"])
 app.include_router(auth_hubspot.router, prefix="/api", tags=["auth"])

@@ -428,3 +428,59 @@ class GmailSyncService:
         
         # This should not be reached, but just in case
         raise HttpError(resp={"status": 429}, content=b"Max retries exceeded")
+    
+    def setup_push_notifications(self, topic_name: str) -> dict[str, Any]:
+        """
+        Set up Gmail push notifications via Pub/Sub.
+        
+        Calls Gmail API watch() to enable push notifications. Notifications expire
+        after 7 days or when the history ID advances significantly.
+        
+        Args:
+            topic_name: Full Pub/Sub topic name (projects/{project}/topics/{topic})
+        
+        Returns:
+            Dict with watch response:
+                - historyId: Starting history ID
+                - expiration: Unix timestamp (milliseconds) when watch expires
+        
+        Raises:
+            HttpError: If watch() call fails
+        
+        Documentation: https://developers.google.com/gmail/api/guides/push
+        """
+        try:
+            watch_request = {
+                "labelIds": ["INBOX"], 
+                "topicName": topic_name
+            }
+            
+            response = self.service.users().watch(
+                userId="me",
+                body=watch_request
+            ).execute()
+            
+            logger.info(
+                f"Gmail push notifications enabled for user {self.user.id}: "
+                f"historyId={response.get('historyId')}, "
+                f"expiration={response.get('expiration')}"
+            )
+            
+            return response
+            
+        except HttpError as e:
+            logger.error(f"Failed to setup Gmail push notifications: {e}")
+            raise
+    
+    def stop_push_notifications(self) -> None:
+        """
+        Stop Gmail push notifications.
+        
+        Calls Gmail API stop() to disable push notifications.
+        """
+        try:
+            self.service.users().stop(userId="me").execute()
+            logger.info(f"Gmail push notifications stopped for user {self.user.id}")
+        except HttpError as e:
+            logger.error(f"Failed to stop Gmail push notifications: {e}")
+            raise

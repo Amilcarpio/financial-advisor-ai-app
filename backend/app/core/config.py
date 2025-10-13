@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     # Application
     secret_key: str = Field(default="dev-secret-key-change-in-production-min-32-characters", env="SECRET_KEY")  # type: ignore[call-overload]
     frontend_url: str = Field(default="http://localhost:5173", env="FRONTEND_URL")  # type: ignore[call-overload]
+    
+    # Google Pub/Sub for push notifications
+    google_pubsub_topic: Optional[str] = Field(default=None, env="GOOGLE_PUBSUB_TOPIC")  # type: ignore[call-overload]
+    google_cloud_project: Optional[str] = Field(default=None, env="GOOGLE_CLOUD_PROJECT")  # type: ignore[call-overload]
+    
+    # Webhook URLs (for Calendar push notifications)
+    webhook_base_url: Optional[str] = Field(default=None, env="WEBHOOK_BASE_URL")  # type: ignore[call-overload]
 
     @field_validator("secret_key")
     @classmethod
