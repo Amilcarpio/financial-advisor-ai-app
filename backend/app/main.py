@@ -68,12 +68,12 @@ app.add_middleware(CorrelationIdMiddleware)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url] if settings.frontend_url else ["http://localhost:5173"],
+    allow_origins=["https://amilcarpio.github.io", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Correlation-ID", "X-Requested-With"],
     expose_headers=["X-Correlation-ID"],
-    max_age=600,  # Cache preflight requests for 10 minutes
+    max_age=600,
 )
 
 # Configure rate limiting
