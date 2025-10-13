@@ -311,10 +311,11 @@ async def logout(response: Response):
     Returns:
         Success message
     """
+    # Must match the same parameters used in set_cookie for proper deletion
     response.delete_cookie(
         key="session",
         httponly=True,
-        secure=settings.app_env == "production",
-        samesite="lax",
+        secure=True,
+        samesite="none",
     )
     return {"message": "Logged out successfully"}

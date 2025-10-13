@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './hooks/useAuth';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Chat from './pages/Chat';
 import AuthCallback from './pages/AuthCallback';
@@ -15,7 +16,14 @@ function App() {
           <Route path="/auth/error" element={<AuthCallback />} />
           <Route path="/auth/hubspot/success" element={<AuthCallback />} />
           <Route path="/auth/hubspot/error" element={<AuthCallback />} />
-          <Route path="/" element={<Chat />} />
+          <Route 
+            path="/" 
+            element={
+              <ProtectedRoute>
+                <Chat />
+              </ProtectedRoute>
+            } 
+          />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
