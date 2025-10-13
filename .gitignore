@@ -3,6 +3,7 @@ BACKEND_PLAN.MD
 FRONTEND_PLAN.MD
 PROJECT_INSTRUCTIONS.MD
 app_interface.png
+DEPLOYMENT.md
 
 # Backup files
 *.backup
@@ -29,3 +30,4 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.env
