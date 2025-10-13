@@ -272,15 +272,27 @@ class GmailSyncService:
         date_str = headers.get("date", "")
         
         # Parse date
-        try:
-            # Gmail date format: "Thu, 10 Oct 2024 10:30:00 +0000"
-            email_date = datetime.strptime(
-                date_str.split("(")[0].strip(),
-                "%a, %d %b %Y %H:%M:%S %z"
-            )
-        except (ValueError, AttributeError):
+        email_date = None
+        date_clean = date_str.split("(")[0].strip() if date_str else ""
+        
+        # Try multiple date formats that Gmail uses
+        date_formats = [
+            "%a, %d %b %Y %H:%M:%S %z",  # "Thu, 10 Oct 2024 10:30:00 +0000"
+            "%d %b %Y %H:%M:%S %z",      # "11 Oct 2025 04:32:00 -0300"
+            "%a, %d %b %Y %H:%M:%S %Z",  # "Thu, 10 Oct 2024 10:30:00 GMT"
+            "%d %b %Y %H:%M:%S %Z",      # "11 Oct 2025 04:32:00 GMT"
+        ]
+        
+        for fmt in date_formats:
+            try:
+                email_date = datetime.strptime(date_clean, fmt)
+                break
+            except (ValueError, AttributeError):
+                continue
+        
+        if email_date is None:
             email_date = datetime.now()
-            logger.warning(f"Could not parse date: {date_str}")
+            logger.warning(f"Could not parse date with any format: {date_str}")
         
         # Extract body
         body = self._extract_body(payload)
