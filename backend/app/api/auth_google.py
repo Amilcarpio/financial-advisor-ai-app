@@ -184,11 +184,13 @@ async def google_oauth_callback(
         # Create session token (outside of session context)
         session_token = create_session_token(user_id)
         
-        logger.info(f"Created session token for user {user_id}, redirecting to {settings.frontend_url}/auth/success")
+        redirect_url = f"{settings.frontend_url}/auth/success"
+        logger.info(f"Created session token for user {user_id}, redirecting to: {redirect_url}")
+        logger.info(f"FRONTEND_URL setting value: {settings.frontend_url}")
         
         # Redirect to frontend with session cookie
         response = RedirectResponse(
-            url=f"{settings.frontend_url}/auth/success",
+            url=redirect_url,
             status_code=status.HTTP_302_FOUND,
         )
         
