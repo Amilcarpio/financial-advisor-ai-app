@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Application
     secret_key: str = Field(default="dev-secret-key-change-in-production-min-32-characters", env="SECRET_KEY")  # type: ignore[call-overload]
-    frontend_url: str = "https://amilcarpio.github.io/financial-advisor-ai-app" 
+    frontend_url: str = Field(default="https://amilcarpio.github.io/financial-advisor-ai-app", env="FRONTEND_URL")  # type: ignore[call-overload] 
     
     # Google Pub/Sub for push notifications
     google_pubsub_topic: Optional[str] = Field(default=None, env="GOOGLE_PUBSUB_TOPIC")  # type: ignore[call-overload]

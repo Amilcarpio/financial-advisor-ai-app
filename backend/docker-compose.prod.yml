@@ -31,7 +31,7 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       
       # Frontend
-      FRONTEND_URL: ${FRONTEND_URL}
+      FRONTEND_URL: https://amilcarpio.github.io/financial-advisor-ai-app
       
       # OpenAI
       OPENAI_API_KEY: ${OPENAI_API_KEY}
