@@ -1303,7 +1303,7 @@ async def search_emails(
                     specific_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
                     conditions.append(func.date(Email.received_at) == specific_date)
                 except ValueError:
-                    logger.warning(f"Invalid date_filter format: {date_filter}")
+                    raise ValueError(f"Invalid date_filter: '{date_filter}'. Must be one of ['today', 'yesterday', 'this_week', 'last_7_days', 'last_30_days'] or YYYY-MM-DD format")
         
         # Sender filtering
         if sender_filter:
@@ -1604,6 +1604,7 @@ async def execute_tool(
         )
     
     elif tool_name == "search_emails":
+        logger.info(f"Executing search_emails with arguments: {arguments}")
         return await search_emails(
             user=user,
             db=db,

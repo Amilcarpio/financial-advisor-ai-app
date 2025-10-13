@@ -770,14 +770,18 @@ def _validate_search_emails(args: dict[str, Any]) -> tuple[bool, str]:
         return False, "Must provide at least one search criterion: query, date_filter, or sender_filter"
     
     # Validate date_filter if provided
-    if "date_filter" in args and args["date_filter"]:
+    if "date_filter" in args and args["date_filter"] is not None:
+        date_filter = str(args["date_filter"]).strip()  # Convert to string and strip whitespace
+        if not date_filter:  # Empty after stripping
+            return False, "date_filter cannot be empty"
+            
         valid_filters = ["today", "yesterday", "this_week", "last_7_days", "last_30_days"]
-        if args["date_filter"] not in valid_filters:
+        if date_filter not in valid_filters:
             # Check if it's a date in YYYY-MM-DD format
             import re
             date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-            if not date_pattern.match(args["date_filter"]):
-                return False, f"Invalid date_filter. Must be one of {valid_filters} or YYYY-MM-DD format"
+            if not date_pattern.match(date_filter):
+                return False, f"Invalid date_filter '{date_filter}'. Must be one of {valid_filters} or YYYY-MM-DD format"
     
     # Validate limit if provided
     if "limit" in args and args["limit"]:
