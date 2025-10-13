@@ -2,7 +2,7 @@
 # See https://fly.io/docs/reference/configuration/
 
 app = "financial-advisor-backend"
-primary_region = "mia"  # Miami - closest to your region
+primary_region = "dfw"  # Dallas - alternative to deprecated mia region
 
 [build]
   dockerfile = "Dockerfile"
