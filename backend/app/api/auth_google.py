@@ -197,9 +197,9 @@ async def google_oauth_callback(
             key="session",
             value=session_token,
             httponly=True,
-            secure=settings.app_env == "production",  # HTTPS only in production
-            samesite="lax",
-            max_age=604800,  # 7 days
+            secure=True,
+            samesite="none", 
+            max_age=604800,
         )
         
         logger.info(f"Set session cookie for user {user_id}")

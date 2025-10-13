@@ -5,16 +5,12 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  
-  // GitHub Pages deployment (uncomment and set base path for GH Pages)
-  // base: '/financial-advisor-ai-app/',
-  
+  base: '/financial-advisor-ai-app/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
-  
   build: {
     outDir: 'dist',
     sourcemap: false,
@@ -28,7 +24,6 @@ export default defineConfig({
       },
     },
   },
-  
   server: {
     port: 5173,
     proxy: {

@@ -24,7 +24,8 @@ class ApiClient {
         if (error.response?.status === 401) {
           // Unauthorized - redirect to login
           if (!window.location.pathname.includes('/login')) {
-            window.location.href = '/login';
+            const basename = '/financial-advisor-ai-app';
+            window.location.href = `${basename}/login`;
           }
         }
         return Promise.reject(error);

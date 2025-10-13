@@ -8,7 +8,7 @@ import NotFound from './pages/NotFound';
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/financial-advisor-ai-app">
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/auth/success" element={<AuthCallback />} />

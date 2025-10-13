@@ -1,15 +1,17 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 export default function Login() {
   const { user, loading, login } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     // If already authenticated, redirect to chat
     if (user && !loading) {
-      window.location.href = '/';
+      navigate('/');
     }
-  }, [user, loading]);
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
