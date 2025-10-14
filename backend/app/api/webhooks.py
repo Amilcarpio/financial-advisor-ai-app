@@ -57,11 +57,27 @@ def verify_hubspot_signature(
     
     # Concatenate client_secret + request_body (per HubSpot docs)
     source_string = client_secret.encode("utf-8") + request_body
-    
+
     # Compute SHA-256 hash
     computed_signature = hashlib.sha256(source_string).hexdigest()
-    
-    return hmac.compare_digest(computed_signature, expected_signature)
+
+    if hmac.compare_digest(computed_signature, expected_signature):
+        return True
+
+    # Detailed debug logging to help diagnose signature mismatches
+    try:
+        body_preview = request_body[:512].decode("utf-8", errors="replace")
+    except Exception:
+        body_preview = str(request_body[:512])
+
+    logger.debug(
+        "HubSpot signature mismatch: expected=%s computed=%s body_preview=%s",
+        expected_signature[:16],
+        computed_signature[:16],
+        body_preview.replace('\n', '\\n')
+    )
+
+    return False
 
 
 def is_webhook_processed(webhook_id: str) -> bool:
