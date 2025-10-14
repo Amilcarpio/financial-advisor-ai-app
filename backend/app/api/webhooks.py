@@ -131,13 +131,18 @@ async def hubspot_webhook(
     Returns:
         JSON object with processing status
     """
-    body_bytes = await request.body()
-    
+    try:
+        body_bytes = await request.body()
+    except Exception as e:
+        # ClientDisconnect and other stream errors can raise while reading body
+        logger.warning(f"Failed to read webhook body: {e}")
+        raise HTTPException(status_code=400, detail="Failed to read request body")
+
     # Verify signature
     if not settings.hubspot_client_secret:
         logger.warning("HubSpot webhook received but hubspot_client_secret not configured")
         raise HTTPException(status_code=500, detail="Webhook verification not configured")
-    
+
     if not verify_hubspot_signature(
         body_bytes,
         x_hubspot_signature,

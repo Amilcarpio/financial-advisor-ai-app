@@ -328,22 +328,22 @@ class HubSpotOAuthHelper:
                 )
                 
                 # Token is valid if we get a 2xx response
-                if response.status_code == 200:
+                if 200 <= response.status_code < 300:
                     return True
-                
-                # 401 means token is expired/invalid
-                if response.status_code == 401:
-                    logger.info("HubSpot token validation failed: 401 Unauthorized")
+
+                # 401 or 403 mean token is expired/invalid/forbidden
+                if response.status_code in (401, 403):
+                    logger.info(f"HubSpot token validation failed: {response.status_code} {response.text}")
                     return False
-                
-                # Other errors - log and assume valid to avoid false negatives
-                logger.warning(f"HubSpot token validation returned unexpected status: {response.status_code}")
-                return True
+
+                # Other errors - log and assume invalid to avoid using a bad token
+                logger.warning(f"HubSpot token validation returned unexpected status: {response.status_code} {response.text}")
+                return False
                 
         except Exception as e:
-            # On network errors or other exceptions, assume valid to avoid false negatives
+            # On network errors or other exceptions, log and assume invalid
             logger.warning(f"HubSpot token validation failed with exception: {e}")
-            return True
+            return False
     
     @staticmethod
     async def get_portal_id(access_token: str) -> Optional[str]:
