@@ -270,6 +270,13 @@ class HubSpotOAuthHelper:
         Raises:
             ValueError: If token refresh fails
         """
+        refresh_token = token_data.get("refresh_token")
+        if not refresh_token:
+            logger.error("No refresh_token found in token_data")
+            raise ValueError("No refresh_token available")
+        
+        logger.info(f"Attempting to refresh HubSpot token (refresh_token: {refresh_token[:8]}...)")
+        
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -278,11 +285,21 @@ class HubSpotOAuthHelper:
                         "grant_type": "refresh_token",
                         "client_id": settings.hubspot_client_id,
                         "client_secret": settings.hubspot_client_secret,
-                        "refresh_token": token_data.get("refresh_token"),
+                        "refresh_token": refresh_token,
                     },
                 )
-                response.raise_for_status()
+                
+                if response.status_code != 200:
+                    logger.error(
+                        f"HubSpot token refresh failed: {response.status_code} - {response.text}"
+                    )
+                    response.raise_for_status()
+                
                 data = response.json()
+                logger.info(
+                    f"HubSpot token refresh successful: new access_token={data.get('access_token', '')[:8]}..., "
+                    f"expires_in={data.get('expires_in')}s"
+                )
                 
                 # Calculate expiry time
                 expiry = None
@@ -291,13 +308,13 @@ class HubSpotOAuthHelper:
                 
                 return {
                     "access_token": data.get("access_token"),
-                    "refresh_token": data.get("refresh_token"),
+                    "refresh_token": data.get("refresh_token", refresh_token),  # Use old if not provided
                     "expires_in": data.get("expires_in"),
                     "expiry": expiry,
-                    "token_type": data.get("token_type"),
+                    "token_type": data.get("token_type", "bearer"),
                 }
         except httpx.HTTPStatusError as e:
-            logger.error(f"Failed to refresh HubSpot token: {e.response.text}")
+            logger.error(f"Failed to refresh HubSpot token: {e.response.status_code} - {e.response.text}")
             raise ValueError(f"Failed to refresh access token: {e}")
         except Exception as e:
             logger.error(f"Failed to refresh HubSpot token: {e}")
@@ -307,7 +324,10 @@ class HubSpotOAuthHelper:
     async def check_token_valid(access_token: str) -> bool:
         """Check if HubSpot access token is still valid.
         
-        Makes a lightweight API call to verify token validity.
+        Uses the /oauth/v1/access-tokens/:token endpoint which doesn't require
+        any specific scopes and is designed for token validation.
+        
+        Reference: https://developers.hubspot.com/docs/api/working-with-oauth
         
         Args:
             access_token: HubSpot access token to validate
@@ -317,21 +337,29 @@ class HubSpotOAuthHelper:
         """
         try:
             async with httpx.AsyncClient() as client:
-                # Use a lightweight endpoint to check token validity
+                # Use HubSpot's official token introspection endpoint
+                # This endpoint doesn't require any scopes, just a valid token
                 response = await client.get(
-                    "https://api.hubapi.com/crm/v3/owners?limit=1",
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                    },
+                    f"https://api.hubapi.com/oauth/v1/access-tokens/{access_token}",
                     timeout=10.0,
                 )
 
-                # 2xx => valid
+                # 2xx => valid token
                 if 200 <= response.status_code < 300:
+                    # Parse response to check expiry
+                    data = response.json()
+                    expires_in = data.get("expires_in", 0)
+                    
+                    # If token expires in less than 60 seconds, treat as invalid to force refresh
+                    if expires_in < 60:
+                        logger.info(f"HubSpot token expires soon ({expires_in}s), forcing refresh")
+                        return False
+                    
+                    logger.debug(f"HubSpot token valid, expires in {expires_in}s")
                     return True
 
-                # 401/403 mean the token is invalid/forbidden and should be refreshed/re-authorized
-                if response.status_code in (401, 403):
+                # 401/404 mean the token is invalid/expired
+                if response.status_code in (401, 404):
                     logger.info(f"HubSpot token validation failed: {response.status_code}")
                     return False
 
