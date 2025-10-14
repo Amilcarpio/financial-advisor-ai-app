@@ -59,6 +59,14 @@ class HubSpotSyncService:
         
         return access_token
     
+    def __del__(self):
+        """Cleanup: close the httpx client when the service is destroyed."""
+        try:
+            if hasattr(self, 'client') and self.client:
+                self.client.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
+    
     def sync(
         self,
         max_results: int = 100,
@@ -112,8 +120,6 @@ class HubSpotSyncService:
             logger.error(error_msg)
             stats["errors"].append(error_msg)
             self.db.rollback()
-        finally:
-            self.client.close()
         
         return stats
     

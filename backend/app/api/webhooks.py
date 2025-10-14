@@ -40,10 +40,9 @@ def verify_hubspot_signature(
     """
     Verify HubSpot webhook signature per official documentation.
     
-    HubSpot v3 webhooks signature verification:
-    1. Concatenate client_secret + request_body
-    2. Compute SHA-256 hash
-    3. Compare with signature header (format: "sha256={hash}")
+    HubSpot v3 webhooks signature verification (updated):
+    Official docs state: sha256(client_secret + request_body)
+    NOT HMAC - just concatenation + hash
     
     Reference: https://developers.hubspot.com/docs/api/webhooks
     """
@@ -56,31 +55,23 @@ def verify_hubspot_signature(
     else:
         provided = signature
 
-    # HubSpot docs: signature = HMAC-SHA256(client_secret, body)
-    # Use client_secret as key and compute HMAC over request body bytes
-    key = client_secret.encode("utf-8")
-    computed_hmac = hmac.new(key, request_body, hashlib.sha256)
-    computed_hex = computed_hmac.hexdigest()
+    # HubSpot v3: signature = SHA256(client_secret + request_body)
+    # Simple concatenation, NOT HMAC
+    message = client_secret.encode("utf-8") + request_body
+    computed_hash = hashlib.sha256(message).hexdigest()
 
     # Compare hex digests securely
-    if hmac.compare_digest(computed_hex, provided):
+    if hmac.compare_digest(computed_hash, provided):
+        logger.info(f"HubSpot signature verified successfully")
         return True
 
-    # Also accept possible base64-encoded signature from some setups
-    try:
-        provided_b64 = base64.b64encode(bytes.fromhex(provided)).decode() if all(c in '0123456789abcdef' for c in provided.lower()) else provided
-        computed_b64 = base64.b64encode(bytes.fromhex(computed_hex)).decode()
-        if hmac.compare_digest(computed_b64, provided_b64):
-            return True
-    except Exception:
-        # ignore conversion errors
-        pass
-
+    # Log mismatch for debugging
     logger.warning(
-        "HubSpot signature mismatch: expected=%s computed=%s body_preview=%s",
-        provided,
-        computed_hex,
-        (request_body[:200] + b"...") if len(request_body) > 200 else request_body,
+        "HubSpot signature mismatch: provided=%s computed=%s body_len=%d body_preview=%s",
+        provided[:16] + "...",
+        computed_hash[:16] + "...",
+        len(request_body),
+        (request_body[:100].decode('utf-8', errors='ignore') if len(request_body) > 0 else "empty"),
     )
 
     return False

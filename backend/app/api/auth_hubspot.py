@@ -163,20 +163,20 @@ async def hubspot_oauth_callback(
             db_session.refresh(user)
             logger.info(f"Updated user {user_id} with HubSpot tokens and portal ID")
             
-            # Auto-sync HubSpot contacts and notes in background (fire and forget)
+            # Auto-sync HubSpot contacts in background (fire and forget)
             try:
                 logger.info(f"Starting HubSpot auto-sync (with notes) for user {user_id}")
                 hubspot_service = HubSpotSyncService(user=user, db=db_session)
-                sync_stats = hubspot_service.sync_with_notes(max_results=100, include_notes=True)
+                sync_stats = hubspot_service.sync_with_notes(max_results=100)
                 logger.info(f"HubSpot sync_with_notes completed: {sync_stats}")
-
-                # Generate embeddings for synced contacts and notes (embedding pipeline already called inside sync_with_notes for notes)
+                
+                # Generate embeddings for synced contacts
                 embedding_pipeline = EmbeddingPipeline(db=db_session)
                 embedding_stats = embedding_pipeline.process_contacts(user_id=user_id)
                 logger.info(f"HubSpot embeddings generated: {embedding_stats}")
             except Exception as sync_error:
                 # Don't fail the auth flow if sync fails
-                logger.error(f"HubSpot auto-sync (with notes) failed (non-fatal): {sync_error}", exc_info=True)
+                logger.error(f"HubSpot auto-sync failed (non-fatal): {sync_error}", exc_info=True)
         
         # Redirect to frontend success page
         return RedirectResponse(

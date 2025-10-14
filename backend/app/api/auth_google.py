@@ -282,7 +282,36 @@ async def get_current_user_info(current_user: Optional[User] = Depends(get_curre
                 # Validate token with HubSpot API
                 hubspot_connected = await HubSpotOAuthHelper.check_token_valid(access_token)
                 if not hubspot_connected:
-                    logger.info(f"HubSpot token validation failed for user {current_user.id}")
+                    logger.info(f"HubSpot token validation failed for user {current_user.id}, attempting refresh")
+                    
+                    # Try to refresh the token if we have a refresh_token
+                    refresh_token = current_user.hubspot_oauth_tokens.get("refresh_token")
+                    if refresh_token:
+                        try:
+                            # Attempt token refresh
+                            new_tokens = await HubSpotOAuthHelper.refresh_token(current_user.hubspot_oauth_tokens)
+                            logger.info(f"Successfully refreshed HubSpot token for user {current_user.id}")
+                            
+                            # Update user with new tokens in a separate session
+                            with Session(engine) as refresh_session:
+                                refresh_user = refresh_session.get(User, current_user.id)
+                                if refresh_user:
+                                    refresh_user.hubspot_oauth_tokens = new_tokens
+                                    refresh_user.touch()
+                                    refresh_session.add(refresh_user)
+                                    refresh_session.commit()
+                                    logger.info(f"Stored refreshed HubSpot tokens for user {current_user.id}")
+                            
+                            # Validate the new token
+                            new_access_token = new_tokens.get("access_token")
+                            if new_access_token:
+                                hubspot_connected = await HubSpotOAuthHelper.check_token_valid(new_access_token)
+                                logger.info(f"HubSpot token refresh validation result for user {current_user.id}: {hubspot_connected}")
+                        except Exception as refresh_error:
+                            logger.error(f"Failed to refresh HubSpot token for user {current_user.id}: {refresh_error}")
+                            hubspot_connected = False
+                    else:
+                        logger.warning(f"User {current_user.id} has expired HubSpot token but no refresh_token")
             else:
                 logger.warning(f"User {current_user.id} has hubspot_oauth_tokens but no access_token")
         except Exception as e:
