@@ -49,32 +49,38 @@ def verify_hubspot_signature(
     """
     if not signature:
         return False
-    
-    if not signature.startswith("sha256="):
-        return False
-    
-    expected_signature = signature[7:]  # Remove 'sha256=' prefix
-    
-    # Concatenate client_secret + request_body (per HubSpot docs)
-    source_string = client_secret.encode("utf-8") + request_body
 
-    # Compute SHA-256 hash
-    computed_signature = hashlib.sha256(source_string).hexdigest()
+    # HubSpot provides header in format: sha256={hex}
+    if signature.startswith("sha256="):
+        provided = signature[7:]
+    else:
+        provided = signature
 
-    if hmac.compare_digest(computed_signature, expected_signature):
+    # HubSpot docs: signature = HMAC-SHA256(client_secret, body)
+    # Use client_secret as key and compute HMAC over request body bytes
+    key = client_secret.encode("utf-8")
+    computed_hmac = hmac.new(key, request_body, hashlib.sha256)
+    computed_hex = computed_hmac.hexdigest()
+
+    # Compare hex digests securely
+    if hmac.compare_digest(computed_hex, provided):
         return True
 
-    # Detailed debug logging to help diagnose signature mismatches
+    # Also accept possible base64-encoded signature from some setups
     try:
-        body_preview = request_body[:512].decode("utf-8", errors="replace")
+        provided_b64 = base64.b64encode(bytes.fromhex(provided)).decode() if all(c in '0123456789abcdef' for c in provided.lower()) else provided
+        computed_b64 = base64.b64encode(bytes.fromhex(computed_hex)).decode()
+        if hmac.compare_digest(computed_b64, provided_b64):
+            return True
     except Exception:
-        body_preview = str(request_body[:512])
+        # ignore conversion errors
+        pass
 
-    logger.debug(
+    logger.warning(
         "HubSpot signature mismatch: expected=%s computed=%s body_preview=%s",
-        expected_signature[:16],
-        computed_signature[:16],
-        body_preview.replace('\n', '\\n')
+        provided,
+        computed_hex,
+        (request_body[:200] + b"...") if len(request_body) > 200 else request_body,
     )
 
     return False
@@ -147,18 +153,13 @@ async def hubspot_webhook(
     Returns:
         JSON object with processing status
     """
-    try:
-        body_bytes = await request.body()
-    except Exception as e:
-        # ClientDisconnect and other stream errors can raise while reading body
-        logger.warning(f"Failed to read webhook body: {e}")
-        raise HTTPException(status_code=400, detail="Failed to read request body")
+    body_bytes = await request.body()
 
     # Verify signature
     if not settings.hubspot_client_secret:
         logger.warning("HubSpot webhook received but hubspot_client_secret not configured")
         raise HTTPException(status_code=500, detail="Webhook verification not configured")
-
+    
     if not verify_hubspot_signature(
         body_bytes,
         x_hubspot_signature,
@@ -167,9 +168,9 @@ async def hubspot_webhook(
         logger.warning("HubSpot webhook signature verification failed")
         raise HTTPException(status_code=401, detail="Invalid signature")
     
-    # Parse webhook payload
+    # Parse webhook payload from already-read body bytes to avoid stream errors
     try:
-        payload = await request.json()
+        payload = json.loads(body_bytes.decode("utf-8"))
     except Exception as e:
         logger.error(f"Failed to parse HubSpot webhook payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON payload")

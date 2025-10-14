@@ -318,7 +318,6 @@ class HubSpotOAuthHelper:
         try:
             async with httpx.AsyncClient() as client:
                 # Use a lightweight endpoint to check token validity
-                # /crm/v3/owners is a simple endpoint that requires authentication
                 response = await client.get(
                     "https://api.hubapi.com/crm/v3/owners?limit=1",
                     headers={
@@ -326,22 +325,24 @@ class HubSpotOAuthHelper:
                     },
                     timeout=10.0,
                 )
-                
-                # Token is valid if we get a 2xx response
+
+                # 2xx => valid
                 if 200 <= response.status_code < 300:
                     return True
 
-                # 401 or 403 mean token is expired/invalid/forbidden
+                # 401/403 mean the token is invalid/forbidden and should be refreshed/re-authorized
                 if response.status_code in (401, 403):
-                    logger.info(f"HubSpot token validation failed: {response.status_code} {response.text}")
+                    logger.info(f"HubSpot token validation failed: {response.status_code}")
                     return False
 
-                # Other errors - log and assume invalid to avoid using a bad token
-                logger.warning(f"HubSpot token validation returned unexpected status: {response.status_code} {response.text}")
+                # Other statuses: treat as invalid to be conservative (forces refresh or re-auth)
+                logger.warning(
+                    f"HubSpot token validation returned unexpected status: {response.status_code}. Treating as invalid."
+                )
                 return False
-                
+
         except Exception as e:
-            # On network errors or other exceptions, log and assume invalid
+            # On network errors or other exceptions, treat token as invalid so caller can attempt refresh
             logger.warning(f"HubSpot token validation failed with exception: {e}")
             return False
     
