@@ -48,3 +48,4 @@ primary_region = "dfw"  # Dallas - alternative to deprecated mia region
 [deploy]
   strategy = "rolling"
   max_unavailable = 0.5
+  release_command = "alembic upgrade head"
