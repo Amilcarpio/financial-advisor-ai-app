@@ -20,12 +20,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.utils.security import get_current_user_from_cookie
-from app.models.user import User
 from app.models.memory_rule import MemoryRule
-
-logger = logging.getLogger(__name__)
+from app.models.user import User
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
+
+logger = logging.getLogger(__name__)
 
 
 # Request/Response Models
@@ -96,7 +96,27 @@ async def create_rule(
     db.add(rule)
     db.commit()
     db.refresh(rule)
-    
+    from app.services.memory_rules import RuleEvaluator
+    from app.core.config import settings
+    from app.services.gmail_sync import GmailSyncService
+    try:
+        evaluator = RuleEvaluator(db)
+        parsed = evaluator.parse_rule(rule.rule_text)
+        is_gmail_rule = parsed and parsed.get("trigger", "").startswith("gmail.message.")
+        if is_gmail_rule and rule.is_active and settings.google_pubsub_topic:
+            
+            if not current_user.google_history_id:
+                gmail_service = GmailSyncService(user=current_user, db=db)
+                response = gmail_service.setup_push_notifications(topic_name=settings.google_pubsub_topic)
+                
+                current_user.google_history_id = response.get("historyId")
+                db.add(current_user)
+                db.commit()
+                logger.info(f"Auto-setup Gmail push notifications for user {current_user.id} after rule creation.")
+            else:
+                logger.info(f"Gmail watcher already active for user {current_user.id}, not creating new.")
+    except Exception as e:
+        logger.error(f"Failed to auto-setup Gmail push notifications: {e}")
     logger.info(f"Created rule {rule.id} for user {current_user.id}")
     return rule
 
@@ -159,18 +179,53 @@ async def update_rule(
                 detail="rule_text cannot be empty"
             )
         rule.rule_text = request.rule_text.strip()
-    
-    if request.description is not None:
-        rule.description = request.description
-    
     if request.is_active is not None:
         rule.is_active = request.is_active
-    
     rule.updated_at = datetime.now(timezone.utc)
-    
     db.commit()
     db.refresh(rule)
-    
+    from app.services.memory_rules import RuleEvaluator
+    from app.core.config import settings
+    from app.services.gmail_sync import GmailSyncService
+    try:
+        evaluator = RuleEvaluator(db)
+        parsed = evaluator.parse_rule(rule.rule_text)
+        is_gmail_rule = parsed and parsed.get("trigger", "").startswith("gmail.message.")
+        # If a Gmail rule was activated, ensure Gmail push notifications are set up
+        if is_gmail_rule and rule.is_active and settings.google_pubsub_topic:
+            if not current_user.google_history_id:
+                gmail_service = GmailSyncService(user=current_user, db=db)
+                response = gmail_service.setup_push_notifications(topic_name=settings.google_pubsub_topic)
+                current_user.google_history_id = response.get("historyId")
+                db.add(current_user)
+                db.commit()
+                logger.info(f"Auto-setup Gmail push notifications for user {current_user.id} after rule update.")
+            else:
+                logger.info(f"Gmail watcher already active for user {current_user.id}, not creating new.")
+        # If a Gmail rule was deactivated, check if there are still other active ones
+        if is_gmail_rule and not rule.is_active:
+            # Count how many gmail.message.* active rules remain
+            gmail_rules_ativas = db.scalars(
+                select(MemoryRule).where(
+                    MemoryRule.user_id == current_user.id,
+                    MemoryRule.is_active == True
+                )
+            ).all()
+            from app.services.memory_rules import RuleEvaluator
+            gmail_count = 0
+            for r in gmail_rules_ativas:
+                parsed_r = RuleEvaluator(db).parse_rule(r.rule_text)
+                if parsed_r and parsed_r.get("trigger", "").startswith("gmail.message."):
+                    gmail_count += 1
+            if gmail_count == 0 and current_user.google_history_id:
+                gmail_service = GmailSyncService(user=current_user, db=db)
+                gmail_service.stop_push_notifications()
+                current_user.google_history_id = None
+                db.add(current_user)
+                db.commit()
+                logger.info(f"Watcher Gmail removed for user {current_user.id} as there are no more active rules.")
+    except Exception as e:
+        logger.error(f"Failed to manage Gmail watcher: {e}")
     logger.info(f"Updated rule {rule_id}")
     return rule
 
@@ -199,9 +254,38 @@ async def delete_rule(
             detail="You don't have access to this rule"
         )
     
+    is_gmail_rule = False
+    from app.services.memory_rules import RuleEvaluator
+    try:
+        evaluator = RuleEvaluator(db)
+        parsed = evaluator.parse_rule(rule.rule_text)
+        is_gmail_rule = parsed and parsed.get("trigger", "").startswith("gmail.message.")
+    except Exception:
+        pass
     db.delete(rule)
     db.commit()
-    
+    # After deleting, if it was a Gmail rule, check if there are still other active ones
+    if is_gmail_rule:
+        gmail_rules_ativas = db.scalars(
+            select(MemoryRule).where(
+                MemoryRule.user_id == current_user.id,
+                MemoryRule.is_active == True
+            )
+        ).all()
+        from app.services.memory_rules import RuleEvaluator
+        gmail_count = 0
+        for r in gmail_rules_ativas:
+            parsed_r = RuleEvaluator(db).parse_rule(r.rule_text)
+            if parsed_r and parsed_r.get("trigger", "").startswith("gmail.message."):
+                gmail_count += 1
+        if gmail_count == 0 and current_user.google_history_id:
+            from app.services.gmail_sync import GmailSyncService
+            gmail_service = GmailSyncService(user=current_user, db=db)
+            gmail_service.stop_push_notifications()
+            current_user.google_history_id = None
+            db.add(current_user)
+            db.commit()
+            logger.info(f"Gmail watcher removed for user {current_user.id} after deleting the last Gmail rule.")
     logger.info(f"Deleted rule {rule_id}")
 
 

@@ -36,6 +36,9 @@ class User(Base):
         String, nullable=True, index=True
     )
     google_history_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    calendar_channel_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    calendar_resource_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    calendar_watch_expiration: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)  # Unix timestamp (ms)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow

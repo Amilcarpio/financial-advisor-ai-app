@@ -23,6 +23,7 @@ from app.core.database import get_session
 from app.models.task import Task
 from app.models.user import User
 from app.services.memory_rules import evaluate_rules_for_event
+from app.services.task_executor import execute_task_now
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -172,10 +173,8 @@ async def hubspot_webhook(
         raise HTTPException(status_code=400, detail="Expected array of events")
     
     processed_count = 0
-    
+    results = []
     for event in payload:
-        # Extract event details per HubSpot v3 webhook documentation
-        # Reference: https://developers.hubspot.com/docs/api/webhooks
         event_id = event.get("eventId")
         subscription_type = event.get("subscriptionType")
         object_id = event.get("objectId")
@@ -184,59 +183,58 @@ async def hubspot_webhook(
         occurred_at = event.get("occurredAt")
         attempt_number = event.get("attemptNumber", 0)
         change_source = event.get("changeSource")
-        
         if not event_id:
             logger.warning("HubSpot webhook event missing eventId, skipping")
             continue
-        
-        # Replay protection
         if is_webhook_processed(event_id):
             logger.info(f"HubSpot webhook {event_id} already processed, skipping")
             continue
-        
         mark_webhook_processed(event_id)
-        
-        # Find user by HubSpot portal ID (preferred method)
         user = None
         if portal_id:
             user = db.scalars(
                 select(User).where(User.hubspot_portal_id == str(portal_id))
             ).first()
-        
-        # Fallback: find first user with HubSpot connected (for backward compatibility)
         if not user:
             logger.warning(f"No user found with portal_id={portal_id}, using fallback")
             user = db.scalars(
                 select(User).where(User.hubspot_oauth_tokens != None)  # type: ignore
             ).first()
-        
         if not user:
             logger.warning(f"No user found for HubSpot webhook event {event_id}")
             continue
-        
         logger.info(
             f"Processing HubSpot webhook: eventId={event_id}, "
             f"type={subscription_type}, objectId={object_id}, "
             f"portalId={portal_id}, attemptNumber={attempt_number}"
         )
-        
-        # Evaluate memory rules with complete event data
+        # Evaluate memory rules and create task(s)
         try:
-            await evaluate_rules_for_event(
+            triggered = await evaluate_rules_for_event(
                 db=db,
                 user=user,
                 event_type=f"hubspot.{subscription_type}",
-                event_data=event  # Pass complete event with all fields
+                event_data=event
             )
             processed_count += 1
+            # Execute all new pending tasks for this user/event synchronamente
+            # (for simplicity, execute only the most recent task for this user/event)
+            task = db.scalars(
+                select(Task).where(Task.user_id == user.id).order_by(Task.created_at.desc())
+            ).first()
+            if task:
+                await execute_task_now(task, db)
+                results.append({"event_id": event_id, "task_id": task.id, "task_state": task.state, "result": task.result, "error": getattr(task, "last_error", None)})
+            else:
+                results.append({"event_id": event_id, "task": None, "note": "No task created"})
         except Exception as e:
-            logger.error(f"Failed to evaluate rules for HubSpot event {event_id}: {e}")
-            # Continue processing other events
-    
+            logger.error(f"Failed to process HubSpot event {event_id}: {e}")
+            results.append({"event_id": event_id, "error": str(e)})
     return {
         "status": "ok",
         "processed": processed_count,
-        "total": len(payload)
+        "total": len(payload),
+        "results": results
     }
 
 
@@ -342,7 +340,7 @@ async def gmail_webhook(
         f"publishTime={publish_time}"
     )
     
-    # Create task to sync new messages
+    # Create and execute task to sync new messages
     task = Task(
         user_id=user.id,
         task_type="gmail_sync",
@@ -356,11 +354,14 @@ async def gmail_webhook(
     )
     db.add(task)
     db.commit()
-    
+    await execute_task_now(task, db)
     return {
         "status": "ok",
         "processed": True,
-        "task_id": task.id
+        "task_id": task.id,
+        "task_state": task.state,
+        "result": task.result,
+        "error": getattr(task, "last_error", None)
     }
 
 
@@ -429,35 +430,42 @@ async def calendar_webhook(
         f"state={x_goog_resource_state}, resource={x_goog_resource_id}"
     )
     
-    # For MVP, we'll trigger a full calendar sync for all users
-    # In production, store channel_id -> user mapping
-    users = db.scalars(
-        select(User).where(User.google_oauth_tokens != None)  # type: ignore
-    ).all()
-    
-    tasks_created = 0
-    for user in users:
-        # Create task to sync calendar
-        task = Task(
-            user_id=user.id,
-            task_type="calendar_sync",
-            payload={
-                "channel_id": x_goog_channel_id,
-                "resource_state": x_goog_resource_state,
-                "resource_id": x_goog_resource_id
-            },
-            state="pending",
-            priority=2,
-            max_attempts=3
+    # Map channel_id/resource_id to user
+    user = db.scalars(
+        select(User).where(
+            User.calendar_channel_id == x_goog_channel_id,
+            User.calendar_resource_id == x_goog_resource_id
         )
-        db.add(task)
-        tasks_created += 1
-    
+    ).first()
+
+    if not user:
+        logger.warning(f"No user found for Calendar webhook: channel={x_goog_channel_id}, resource={x_goog_resource_id}")
+        return {"status": "ok", "processed": False, "reason": "No matching user"}
+
+    # Create and execute calendar sync task only for the correct user
+    task = Task(
+        user_id=user.id,
+        task_type="calendar_sync",
+        payload={
+            "channel_id": x_goog_channel_id,
+            "resource_state": x_goog_resource_state,
+            "resource_id": x_goog_resource_id
+        },
+        state="pending",
+        priority=2,
+        max_attempts=3
+    )
+    db.add(task)
     db.commit()
-    
+    await execute_task_now(task, db)
     return {
         "status": "ok",
-        "tasks_created": tasks_created
+        "processed": True,
+        "user_id": user.id,
+        "task_id": task.id,
+        "task_state": task.state,
+        "result": task.result,
+        "error": getattr(task, "last_error", None)
     }
 
 

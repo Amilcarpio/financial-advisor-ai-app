@@ -382,18 +382,32 @@ async def setup_push_notifications(
         else:
             results["gmail"]["error"] = "GOOGLE_PUBSUB_TOPIC not configured"
         
-        # Setup Calendar push notifications
         if settings.webhook_base_url:
             try:
-                calendar_service = CalendarSyncService(user=user, db=session)
-                webhook_url = f"{settings.webhook_base_url}/api/webhooks/calendar"
-                calendar_response = calendar_service.setup_push_notifications(
-                    webhook_url=webhook_url
-                )
-                results["calendar"]["enabled"] = True
-                results["calendar"]["channelId"] = calendar_response.get("id")
-                results["calendar"]["resourceId"] = calendar_response.get("resourceId")
-                results["calendar"]["expiration"] = calendar_response.get("expiration")
+                watcher_exp = user.calendar_watch_expiration or 0
+                import time
+                now_ms = int(time.time() * 1000)
+                if user.calendar_channel_id and user.calendar_resource_id and watcher_exp > now_ms:
+                    logger.info(f"Watcher Calendar already active for user {user.id}, not creating new.")
+                    results["calendar"]["enabled"] = True
+                    results["calendar"]["channelId"] = user.calendar_channel_id
+                    results["calendar"]["resourceId"] = user.calendar_resource_id
+                    results["calendar"]["expiration"] = user.calendar_watch_expiration
+                else:
+                    calendar_service = CalendarSyncService(user=user, db=session)
+                    webhook_url = f"{settings.webhook_base_url}/api/webhooks/calendar"
+                    calendar_response = calendar_service.setup_push_notifications(
+                        webhook_url=webhook_url
+                    )
+                    results["calendar"]["enabled"] = True
+                    results["calendar"]["channelId"] = calendar_response.get("id")
+                    results["calendar"]["resourceId"] = calendar_response.get("resourceId")
+                    results["calendar"]["expiration"] = calendar_response.get("expiration")
+                    user.calendar_channel_id = calendar_response.get("id")
+                    user.calendar_resource_id = calendar_response.get("resourceId")
+                    user.calendar_watch_expiration = int(calendar_response.get("expiration") or 0)
+                    session.add(user)
+                    session.commit()
             except Exception as e:
                 logger.error(f"Failed to setup Calendar push notifications: {e}")
                 results["calendar"]["error"] = str(e)
