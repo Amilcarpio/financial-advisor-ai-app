@@ -31,7 +31,7 @@ def upgrade() -> None:
                existing_nullable=True)
         batch_op.alter_column('external_source',
                existing_type=sa.VARCHAR(),
-               nullable=False)
+               nullable=True)
 
     with op.batch_alter_table('memoryrule', schema=None) as batch_op:
         batch_op.alter_column('rule_text',

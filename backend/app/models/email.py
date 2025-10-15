@@ -38,7 +38,7 @@ class Email(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     received_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    external_source: Mapped[Optional[str]] = mapped_column(String, nullable=False, default="gmail")
+    external_source: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="gmail")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
