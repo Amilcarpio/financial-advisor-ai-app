@@ -8,6 +8,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    worker_poll_interval: int = Field(default=5, validation_alias="WORKER_POLL_INTERVAL")
+    worker_max_concurrent: int = Field(default=10, validation_alias="WORKER_MAX_CONCURRENT")
+    worker_lock_timeout: int = Field(default=300, validation_alias="WORKER_LOCK_TIMEOUT")
     """Central application configuration loaded from environment variables."""
 
     app_name: str = Field(default="FastAPI Backend", env="APP_NAME")  # type: ignore[call-overload]
